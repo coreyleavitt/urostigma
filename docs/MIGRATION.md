@@ -124,6 +124,17 @@ unscheduled.
 6. No kill-switch convention → standing rule on epic #10.
 7. Publication readiness unowned → **#23** (publication gate).
 8. Sync policy silent on provenance exposure → clause added to #4.
+9. Console rebuild untracked → **syconium#7** (Syconium.Console);
+   RFC-019 stub.
+10. Promotion gates checked correctness only → perf clause added as the
+    third epic #10 standing rule; each swap's RFC names its budget.
+
+## RFC scaffold (2026-08-13)
+
+The full number line is allocated and stubbed: registry at
+[docs/rfcs/README.md](rfcs/README.md); RFC-010 (fork sovereignty) drafted
+with nine slices and awaiting its two architect rounds; 011/014/020
+stubbed here; 012/013/015–019 stubbed in syconium.
 
 ## Sequence
 

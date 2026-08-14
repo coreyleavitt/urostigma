@@ -3,7 +3,7 @@
 - **Stage:** 2 architect   •   **Round:** 1 of 2 complete (2026-08-13)
 - **Resume:** `/architect docs/rfcs/010-fork-sovereignty.md round 2`
 
-## Slices (11 after round-1 re-slicing)
+## Slices (10 after round-1 re-slicing + owner scope decision)
 - [ ] 1 Buildable ground: TechnitiumLibrary pin script, found DnsServerCore.Tests
 - [ ] 2 Poisoned-app fixture (from pr1-repro); fold 0001; delete stale branch
 - [ ] 3 Fold 0002 + discovery test (corrected copyright header)
@@ -13,8 +13,19 @@
 - [ ] 7 CI: build + test workflow (verification by execution)
 - [ ] 8 CI: image publish (Dockerfile.sovereign, -sovereign.<n> tags, gated)
 - [ ] 9 Sync policy doc + UPSTREAM-HISTORY preservation
-- [ ] 10 Cutover A: compile-reference consumers (COPY --from + HintPaths)
-- [ ] 11 Cutover B: runtime consumers (fixture C# change) + scripts; delete patches/
+- [ ] 10 Cutover: content-filter Dockerfiles clone the fork at pin; delete patches/
+
+## Owner scope decision (2026-08-13, mid-round)
+No external consumers exist and none are wanted as a constraint
+("we dont have any real consumers yet except for me and I dont care").
+Consumer-durability machinery removed from the RFC: COPY --from DLL
+extraction, fixture image-pulling + tag-bump discipline, rollback
+runbooks, GHCR Actions-access grants. Cutover collapsed to clone-source
+changes (old slices 10-11 → slice 10). Recorded in the RFC so round 2
+does not re-litigate. Roadmap simultaneously restructured into parallel
+engine/host tracks (MIGRATION.md "Tracks") — engine work (013 adoption,
+016 building, 012 tooling) has no fork dependencies and starts
+immediately.
 
 ## Open forks (awaiting Corey)
 - none — all round-1 findings carried confident recommendations and were applied

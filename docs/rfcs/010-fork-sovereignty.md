@@ -13,10 +13,9 @@ series in `technitium-content-filter/patches/dns-server/` becomes real
 commits here with tests; the two founding quirks that motivated the pivot
 get fixed in-tree; CI builds, tests, and publishes the server image from
 this repo; a written upstream-sync policy replaces the pin-bump/patch-rebase
-discipline; and content-filter's consumers — six Dockerfiles, the
-Testcontainers fixture that builds a server image at test-run time, a build
-script, and a compose example — stop reconstructing the patched server and
-consume this repo's published image.
+discipline; and content-filter's Dockerfiles stop cloning upstream and applying
+patches — they clone this repo at a pin instead, and the patch series is
+deleted.
 
 Context: upstream declined the type-sweep fix
 (TechnitiumSoftware/DnsServer#2092, "not a bug") and the program pivoted
@@ -239,28 +238,18 @@ passed on the same commit**. Slice 9 also repoints this repo's own
 `docker-compose.yml` (which still names upstream's Docker Hub image) at
 the published image.
 
-**Tagging (decided):** immutable `<upstream-version>-sovereign.<n>` (e.g.
-`15.4.0-sovereign.1`); `n` increments per publish against that upstream
-base and resets on an upstream bump. No moving `latest`/`develop` tag is
-consumed by anything. Consumers pin an immutable tag and bump it
-deliberately — freshness-by-explicit-bump is the program's "merges on our
-schedule" philosophy applied to images, and it replaces the
-"built-not-pulled so nothing goes stale" property the fixture is giving
-up. **Rollback is repinning the previous tag** — one-line change in any
-consumer, no republish needed; tags are never overwritten.
+**Tagging:** `<upstream-version>-sovereign.<n>` (e.g.
+`15.4.0-sovereign.1`), immutable, plus a moving `develop` tag for the
+operator's own compose convenience. The image's consumers are the
+RFC-012 harness and the operator's deployment — no consumer-facing tag
+ceremony beyond that (scope decision in Consumer cutover below).
 
-**Build auth (decided):** content-filter's CI gets image access via the
-GHCR package's *Manage Actions access* grant to that repo — its own
-`GITHUB_TOKEN` can then pull, with no rotating secret at all. A classic
-PAT (`read:packages`) exists only for humans pulling locally
-(fine-grained PATs are rejected: GHCR support for them has documented
-gaps). Two guardrails stated because content-filter is public: the
-package grant/token is exercised only on `push`/`workflow_dispatch`/
-same-repo-PR triggers, never via `pull_request_target`; and in the
-integration/perf jobs the `docker login ghcr.io` must happen on the **host
-runner before** the socket-mounted (`-v /var/run/docker.sock`) containers
-run — Testcontainers' pulls execute on the host daemon, so credentials
-inside the SDK container are inert.
+**Build auth:** one classic PAT (`repo` read + `read:packages`) covers
+both the private clone in content-filter's Docker builds and any image
+pull; stored as a secret in content-filter and used only on
+`push`/`workflow_dispatch`/same-repo-PR triggers, never
+`pull_request_target` (content-filter is public). Fine-grained PATs
+rejected — GHCR support for them has documented gaps.
 
 ### Upstream sync policy (issue #4)
 
@@ -290,60 +279,45 @@ A written policy at `docs/UPSTREAM-SYNC.md`:
   re-survey the `ApplicationCommon` SDK surface for breaking drift against
   the plugin — carries into the policy.
 
-### Consumer cutover — two patterns, not one
+### Consumer cutover — slimmed to the actual consumer population
 
-The six Dockerfiles split by what they actually consume, and two named
-artifacts sit outside the Dockerfiles entirely:
+**Scope decision (2026-08-13, owner):** there are no external consumers —
+content-filter is this operator's own deployment, and continuity ceremony
+for it is explicitly not wanted. The cutover is therefore the minimal
+change that ends patch application: every content-filter Dockerfile that
+today clones upstream and applies `patches/dns-server/` (the six
+Dockerfiles plus `Dockerfile.patched-server`) instead clones
+`coreyleavitt/urostigma` at the pin and drops the `git apply` loop. Auth
+for the private clone is the deploy-key/token-in-build-context story
+issue #2 already named. Nothing else changes: `HintPath`s still resolve
+against source builds, and `BaseTechnitiumFixture` keeps building its
+server image at test-run time — now from the fork — preserving its
+built-not-pulled freshness property with zero C# changes.
 
-**(a) Compile-reference consumers** — `Dockerfile.build`, `.test`,
-`.benchmarks`, `.coyote` build `DnsServerCore.ApplicationCommon` (and
-clone TechnitiumLibrary) purely so `ContentFilter.csproj`'s `HintPath`s
-resolve. Cutover: multi-stage
-`COPY --from=ghcr.io/coreyleavitt/urostigma:<tag>` of
-`DnsServerCore.ApplicationCommon.dll` *and* the `TechnitiumLibrary.*.dll`
-set out of the published image (slice 10 first verifies both are present
-in the publish output and records their paths), with the `HintPath`
-targets in the three consuming `.csproj`s updated to the copy
-destination. This kills the TechnitiumLibrary clone in these four
-Dockerfiles too. Publishing `ApplicationCommon` as a NuGet package was
-considered and deferred to RFC-013, where a package feed and version
-contract exist anyway; `COPY --from` needs no new publishing machinery
-now.
+Rejected as consumer-population-zero engineering (recorded so round 2
+doesn't re-litigate): `COPY --from` DLL extraction, NuGet packaging of
+`ApplicationCommon`, fixture image-pulling with tag-bump discipline,
+rollback runbooks, and the GHCR Actions-access grant. Revisit at RFC-013's
+version contract if the engine ever gains real consumers.
 
-**(b) Runtime consumers** — `Dockerfile.integration-test` and
-`.perf-comparison` get their server not from a Dockerfile `FROM` but from
-`BaseTechnitiumFixture.cs`, which builds `Dockerfile.patched-server` at
-test-run time via `ImageFromDockerfileBuilder`. Cutover is a **C# change**:
-the builder is replaced with `.WithImage("ghcr.io/coreyleavitt/urostigma:
-<pinned-tag>")`; `PatchedServerImageTag`, `BuildPatchedServerImageAsync`,
-and `FindPatchesDirectory` retire; the fixture's "built, not pulled"
-comment is replaced with the freshness-by-explicit-bump rationale. The
-two CI jobs gain the host-daemon `docker login` from Build auth.
-
-**(c) Scripts and compose** — `build-dns-server.sh` retires (its job no
-longer exists); `docker-compose.example.yaml`'s `image:` line and setup
-comments are rewritten to pull the published image.
-
-**(d) History preservation** — before `patches/dns-server/` is deleted:
-`UPSTREAM.md` (the only record of PR #2092's submission and decline, and
-the abandoned PR #2 draft) is copied to this repo as
-`docs/UPSTREAM-HISTORY.md`; `pr1-repro/` has already been ported into
-test fixtures by slice 2. Nothing else in `patches/` carries information
-not now in commits.
+**History preservation** — before `patches/dns-server/` is deleted:
+`UPSTREAM.md` (the only record of PR #2092's submission and decline) is
+copied to this repo as `docs/UPSTREAM-HISTORY.md`; `pr1-repro/` has
+already been ported into test fixtures by slice 2. `build-dns-server.sh`
+and `docker-compose.example.yaml` update their comments/source in
+passing; both keep working since the image build survives.
 
 ## Slices
 
-Sequencing note (why content-filter appears in the fork's founding RFC at
-all): content-filter's pipeline builds the server production actually
-runs. Once quirk fixes land, the fork diverges from upstream+patches, so
-un-cut-over consumers would be building a *different server* than this
-repo — and RFC-012's characterization baseline must be captured against
-the server we run. Slices 1–9 unblock RFCs 011/012/013 and nothing in
-the engine program waits on the cutover; slices 10–11 are last, and
-their hard deadline is before RFC-012 captures its corpus (one build,
-one truth). The folded 0002/0003 surfaces are transitional — RFC-015
-replaces them — but they are in production use today (the web UI's
-explain proxy), so the fork must be able to build them until then.
+Sequencing note: content-filter appears here only because its Dockerfiles
+are the last thing still building upstream+patches — once quirk fixes
+land, that recipe produces a *different server* than this repo, which
+would poison RFC-012's characterization baseline. The fix is one slice of
+one-line clone-source changes, deliberately minimal (see the scope
+decision in Consumer cutover). Slices 1–9 unblock RFCs 011/012/013;
+nothing in the engine program waits on slice 10. The folded 0002/0003
+surfaces are transitional — RFC-015 replaces them — but the operator's
+deployment uses them today, so the fork carries them until then.
 
 Each slice is a `/tdd` unit where behavior changes; slices 7–8 are
 infrastructure verified by execution (a dry run of the same commands,
@@ -384,16 +358,11 @@ automate what is already green.
    using the documented auth path.
 9. **Sync policy doc** (`docs/UPSTREAM-SYNC.md`) per the design, plus
    `docs/UPSTREAM-HISTORY.md` preserving the PR #2092 record.
-10. **Cutover A (compile-reference consumers), in content-filter:**
-    verify DLL paths in the published image; rewrite the four
-    Dockerfiles to `COPY --from`; update the three `.csproj` `HintPath`s;
-    that repo's build/test/benchmarks/coyote CI jobs green.
-11. **Cutover B (runtime consumers + scripts), in content-filter:**
-    `BaseTechnitiumFixture.cs` pulls the pinned tag; host-daemon logins in
-    the two CI jobs; `build-dns-server.sh` retired;
-    `docker-compose.example.yaml` rewritten; **then** delete
-    `patches/dns-server/`; full content-filter CI green against the
-    published image.
+10. **Cutover, in content-filter:** the seven Dockerfiles (six + 
+    `Dockerfile.patched-server`) clone `coreyleavitt/urostigma` at the
+    pin instead of upstream+patches, `git apply` loops deleted, clone
+    auth via the PAT/deploy key; **then** delete `patches/dns-server/`
+    (history preserved per Design); full content-filter CI green.
 
 ## Open questions
 

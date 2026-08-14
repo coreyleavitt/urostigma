@@ -23,53 +23,59 @@ Provenance rules live in syconium's CONTRIBUTING.md. Upstream
 (TechnitiumSoftware/DnsServer) is a read-only merge source; upstreaming is
 dead.
 
-## Phases
+## Tracks (restructured 2026-08-13)
 
-**0 — Identity & structure (done 2026-08-13).** Fork renamed `urostigma`
-under `ficus/`, `syconium` scaffolded (Apache LICENSE, NOTICE, provenance
-rules), engine issues transferred (old #8/#15/#19/#21 → syconium #1–#4)
-with cross-repo epic links intact.
+The roadmap runs as **two parallel tracks meeting at two gates** — not a
+single phase line. The engine is the goal; engine work starts
+immediately and never waits on host plumbing it doesn't need. (The
+earlier phase framing was history-shaped — organized around the fork
+pivot — and manufactured false dependencies; this supersedes it.)
 
-**1 — Sovereignty (epic #1, next).** #2 fold the patch series into
-commits and retire `git apply` from the content-filter Dockerfiles; #3 CI
-building/testing/publishing the server image; #4 upstream sync policy;
-#5 founding quirks (silent install success, RFC 6761 hook).
-*Exit:* content-filter builds against an urostigma-built image with zero
-patch files; sync policy written; quirks fixed with tests.
+**Done — identity & structure (2026-08-13).** Fork renamed `urostigma`
+under `ficus/`, `syconium` scaffolded, engine issues transferred with
+cross-repo epic links intact, RFC line allocated.
 
-**2 — Map & pin (epic #6).** #7 subsystem map + dependency graph;
-syconium#1 wire-level characterization harness (the promotion gate and
-provenance evidence corpus); #9 swap order + the recursion boundary —
-re-scopes everything downstream.
-*Exit:* map merged; harness runs against the CI image; decisions recorded.
+### Engine track (syconium, Apache) — starts now
 
-**3 — Engine adoption & the seam (epic #10).** syconium#5 adopt
-ContentFilter.Core; #11 consumption mechanism + version contract;
-#12 native query-pipeline seam, dark-launched to parity; #13 explain/
-control surfaces server-native.
-*Exit:* engine answers in-process behind the seam with harness-shown
-parity against the app path.
+- **E1 — Adopt ContentFilter.Core** (RFC-013, syconium#5/#6): the Core is
+  owned, already-Apache code; adoption, solution shape, and engine CI
+  have **no fork dependency**. Only the host version contract waits on
+  H1's image.
+- **E2 — Synthesis builder** (RFC-016 engine side, syconium#2): built
+  from RFC-007 and the plugin-side tests — owned spec, owned code,
+  wire-bytes assertions. **No fork dependency to build**; promotion into
+  the host waits on G2.
+- **E3 — Harness construction** (RFC-012, syconium#1): corpus format,
+  FsCheck generators, capture/replay/diff tooling — developable against
+  any server image, stock upstream included. Only **baseline capture**
+  (G1) needs the fork's build.
+- **E4 — Cache and identity engine work** (RFC-017/018 engine sides):
+  these genuinely wait on H2's characterization; not artificial.
 
-**4 — Swap 1: response synthesis (epic #14).** syconium#2 rules from
-RFC-007 and the plugin-side tests; #16 unify all synthesized responses
-through the one F# builder, delete C# duplicates.
+### Host track (urostigma, GPL)
 
-**5 — Swap 2: the cache (epic #17).** #18 characterize
-`CacheZoneManager` (incl. admin/stats observables and the persistence
-decision); syconium#3 property-tested, differential-gated F# cache.
+- **H1 — Sovereignty** (RFC-010, epic #1): buildable fork, founding
+  tests, CI + image, sync policy, quirk fixes, consumer cutover.
+- **H2 — Map & characterize** (RFC-011, epic #6): subsystem map, swap
+  order, recursion boundary, `CacheZoneManager` characterization incl.
+  admin/stats observables and persistence.
+- **H3 — Native seam** (RFC-014, epic #10): the filter-agnostic Ostiole
+  contract, dark-launch machinery, kill-switch/soak/perf standing rules.
 
-**6 — Swap 3: identity & transport (epic #20).** syconium#4 identity
-tiers (exact IP, CIDR, DoT client IDs); #22 termination scope, DoT first,
-DoQ deferred — decided from the Phase 2 map.
+### Gates (where the tracks must meet)
 
-Swap discipline (4–6): characterize → implement engine-side from spec →
-dark-launch → promote when the divergence log is dry → delete the C# path.
-Every swap ships behind a per-subsystem kill-switch flag until a soak
-period named in its RFC expires (epic #10 standing rule).
+- **G1 — Baseline:** the harness (E3) captures the promotion baseline
+  against the fork's CI image (H1). H1's cutover slices ensure production
+  and baseline are the same build — one build, one truth.
+- **G2 — First swap:** synthesis (E2) dark-launches through the seam
+  (H3) and promotes per RFC-016; cache (RFC-017) and identity (RFC-018)
+  then repeat the pattern: characterize → implement from spec →
+  dark-launch → divergence log dry + perf budget → delete the C# path,
+  kill-switch surviving the named soak.
 
-**7 — Steady state.** The host is a thin GPL shell around an Apache
-engine. Upstream merges decay from code source to intelligence feed per
-subsystem as swaps land. Publication is gated by #23, deliberately
+**Steady state.** The host is a thin GPL shell around an Apache engine.
+Upstream merges decay from code source to intelligence feed per subsystem
+as swaps land. Publication is gated by #23 (RFC-020), deliberately
 unscheduled.
 
 ## Standing machinery

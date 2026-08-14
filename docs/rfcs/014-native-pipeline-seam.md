@@ -19,7 +19,10 @@ first consumer, not its definition — in-process, so the interface costs
 nanoseconds, unlike the ALC hop this epic retires. The seam thereby
 doubles as the future in-process plugin surface without building a plugin
 framework for one consumer; `IDnsApplication` remains the third-party/
-out-of-process story. This RFC also defines the
+out-of-process story. Filtering is default-absent, not present-but-
+disabled: the engine's default pipeline is pure DNS, the filter is an
+attached consumer, and the seam with zero consumers costs a branch — no
+iteration, no allocation, no dispatch (perf-harness testable). This RFC also defines the
 dark-launch mechanics (both paths run, divergence logged, where that log
 lives and how it is monitored), and the epic #10 standing rules as
 enforceable design: per-subsystem kill-switch flags surviving until a

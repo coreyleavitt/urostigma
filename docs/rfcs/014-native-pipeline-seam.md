@@ -11,7 +11,15 @@ recursion, synthesize verdict responses in-process, no ALC hop. The
 existing content-filter plugin stays deployable throughout; the native
 path is dark-launched behind the RFC-012 harness until parity, then
 becomes the default for our deployment. This RFC defines the seam
-interface (candidate name: Ostiole — the opening into the syconium), the
+interface (candidate name: Ostiole — the opening into the syconium), which
+is filter-agnostic by decision (2026-08-13): its contract speaks
+pipeline-neutral types (query context, verdict, synthesis instruction)
+with no ContentFilter types in its signature. The filter is the seam's
+first consumer, not its definition — in-process, so the interface costs
+nanoseconds, unlike the ALC hop this epic retires. The seam thereby
+doubles as the future in-process plugin surface without building a plugin
+framework for one consumer; `IDnsApplication` remains the third-party/
+out-of-process story. This RFC also defines the
 dark-launch mechanics (both paths run, divergence logged, where that log
 lives and how it is monitored), and the epic #10 standing rules as
 enforceable design: per-subsystem kill-switch flags surviving until a

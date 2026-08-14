@@ -1,6 +1,7 @@
 # RFC-010: Fork sovereignty — patches become commits, builds trust this repo
 
-- **Status:** Draft (pre-architect)
+- **Status:** Draft (round-1 review applied 2026-08-13; ledger in
+  `010-fork-sovereignty.handoff.md`)
 - **Depends on:** nothing — this is the program's foundation
 - **Enables:** everything downstream (011–020); content-filter's patch-application machinery retires
 - **Issues:** epic #1 (#2 fold patches, #3 CI, #4 sync policy, #5 founding quirks); establishes the registry decision recorded on epic #1
@@ -12,8 +13,10 @@ series in `technitium-content-filter/patches/dns-server/` becomes real
 commits here with tests; the two founding quirks that motivated the pivot
 get fixed in-tree; CI builds, tests, and publishes the server image from
 this repo; a written upstream-sync policy replaces the pin-bump/patch-rebase
-discipline; and the six content-filter Dockerfiles stop running `git apply`
-loops and consume the published image.
+discipline; and content-filter's consumers — six Dockerfiles, the
+Testcontainers fixture that builds a server image at test-run time, a build
+script, and a compose example — stop reconstructing the patched server and
+consume this repo's published image.
 
 Context: upstream declined the type-sweep fix
 (TechnitiumSoftware/DnsServer#2092, "not a bug") and the program pivoted
@@ -24,16 +27,20 @@ to merge, on our schedule.
 
 Every content-filter build currently reconstructs the patched server from
 scratch: six Dockerfiles (`Dockerfile.build`, `.test`, `.integration-test`,
-`.benchmarks`, `.coyote`, `.perf-comparison`) copy `patches/dns-server/`
-and loop `git apply` over a fresh upstream clone. That was correct
+`.benchmarks`, `.coyote`, `.perf-comparison`) clone upstream and either
+apply the patch series or build `DnsServerCore.ApplicationCommon` from the
+patched source, and `BaseTechnitiumFixture.cs` builds the runnable
+patched-server image at test-run time via Testcontainers. That was correct
 discipline while the patches were upstream candidates; now that they are
 permanent, it is pure overhead with real failure modes: the patches carry
 placeholder authorship (`RFC-006 Spike <spike@localhost>`), drift silently
 against upstream churn, and no build anywhere trusts this fork.
 
-The fork also ships zero test projects (upstream has none), so the folded
-patches' behavior is currently proven only by content-filter's plugin-side
-tests — the wrong repo for pinning server behavior we now own.
+The fork also cannot be built or tested standalone today: it ships zero
+test projects (upstream has none), and every project references
+`TechnitiumLibrary` DLLs via `HintPath` into an unpinned sibling clone
+that this development tree does not even contain. Sovereignty starts with
+a repo that builds itself.
 
 ## Non-goals
 
@@ -44,71 +51,238 @@ tests — the wrong repo for pinning server behavior we now own.
 - No wire-level characterization harness — that is RFC-012; tests here are
   unit/service-level.
 - No publication: repo and image stay private (RFC-020 gates that).
+- **TechnitiumLibrary stays upstream's.** It is pinned and consumed, never
+  forked or patched by this RFC; if divergence is ever needed it gets its
+  own decision. `HintPath`s in the `.csproj` files are left untouched —
+  editing them would put a permanent merge conflict on every project file.
+- **linux/amd64 only.** Multi-arch is explicitly out of scope (matches
+  current practice everywhere in the program); revisit if a consumer
+  materializes on arm64.
+- **Windows-only projects are out of CI scope**: `DnsServerWindowsService`,
+  `DnsServerSystemTrayApp`, `DnsServerWindowsSetup` are not built by CI
+  (runners are Linux; nothing consumes them). Revisit at RFC-020 if
+  publication wants Windows artifacts.
+- The `Apps`-section permission coarseness in patch 0003 (`View` grants
+  `config/get` across every installed app) is folded as-is and tracked as
+  follow-up issue #24, not fixed here.
 
 ## Design
 
-### Branch and history
+### Branch, history, and prior state
 
 Work lands on `develop` (this repo's default; issue #2's "master" reads as
-the default branch). The folded commits are new commits authored by Corey
-Leavitt — the patch files' placeholder identity is not preserved; each
-commit message cites the patch it folds and RFC-006 for provenance of
-intent. Patches are folded in series order (0003 depends on 0002's
-interface and touches 0001's file).
+the default branch). One stale branch exists from the upstream attempt:
+`origin/fix/app-type-discovery` carries patch 0001's change (commit
+`cba7bff4`) without the provenance-citing message this RFC requires — it
+is not merged; slice 2 folds 0001 fresh with a proper message and the
+stale branch is deleted afterward.
+
+The folded commits are new commits authored by Corey Leavitt — the patch
+files' placeholder identity is not preserved; each commit message cites
+the patch it folds and RFC-006 for provenance of intent. Patches fold
+strictly in series order 0001 → 0002 → 0003 (0003 depends on 0002's
+interface and touches 0001's file). Note for implementers: a bulk
+`git apply --check patches/*.patch` falsely fails on overlapping hunks in
+`DnsApplication.cs`; sequential application is clean (verified).
+
+**In-file copyright headers:** new files entering the tree (e.g.
+`IDnsApplicationApiHandler.cs`, which the patch wrongly stamps with
+Technitium's header) carry this fork owner's copyright under GPLv3;
+modified upstream files keep Technitium's header. This implements GPLv3
+§5's state-changes norm rather than misattributing new work.
 
 ### Patch inventory
 
 | Patch | Touches | Behavior |
 |---|---|---|
-| 0001 per-type isolation | `DnsServerCore/Dns/Applications/DnsApplication.cs` | A throwing type in the app type-sweep no longer aborts the whole sweep; other types still register |
+| 0001 per-type isolation | `DnsServerCore/Dns/Applications/DnsApplication.cs` | `ReflectionTypeLoadException` during the type sweep no longer aborts the whole assembly; loadable types still register (unloadable ones are skipped via `ex.Types`) |
 | 0002 `IDnsApplicationApiHandler` | `DnsServerCore.ApplicationCommon/IDnsApplicationApiHandler.cs` (new) | The generic app-API port RFC-006 built the explain endpoint on |
-| 0003 `/api/apps/call` | `DnsApplication.cs`, `DnsWebService.cs`, `WebServiceAppsApi.cs` | Dispatch route from the web service to a named app's handler |
+| 0003 `/api/apps/call` | `DnsApplication.cs`, `DnsWebService.cs`, `WebServiceAppsApi.cs` | Dispatch route from the web service to a named app's handler — folded into the extracted dispatcher shape below, not verbatim |
+
+**On upstream's objection to 0001.** The maintainer's decline was a
+substantive failure-isolation argument, not process: partial registration
+can leave an app running in a configuration its author never tested, with
+per-query errors instead of one clean total failure. This fork chooses
+partial-load anyway, with eyes open, because: (a) the observed failure
+mode that motivated the pivot was the opposite — a *total* silent abort
+that turned one unresolvable type into blocking-off-with-no-signal; (b)
+this deployment's apps are operated by their author, not installed from a
+marketplace, so "untested partial configuration" is discoverable rather
+than latent; and (c) quirk fix 1 below makes partial loads *loud* at
+install time, which addresses the "hard to notice" half of upstream's
+concern directly. Total-abort-with-visible-error was considered and
+rejected: it converts a missing optional dependency into a full blocking
+outage, which is the worse failure for a DNS-filtering deployment.
 
 ### Founding test project
 
-`DnsServerCore.Tests` (xUnit, first test project in the fork) is founded by
-slice 1 and grows with every slice. It pins folded-patch behavior at the
-unit/service level; full wire coverage arrives with RFC-012 and is not
-duplicated here.
+`DnsServerCore.Tests` (first test project in the fork) is founded by slice
+1 and grows with every slice. Package pins match the sibling repo so the
+program's test stack does not drift: xUnit 2.9.3, NSubstitute 5.3.0,
+FsCheck.Xunit 3.1.0 (FsCheck only when property tests arrive; don't
+reference it speculatively). Slice 1 adds `InternalsVisibleTo` from
+`DnsServerCore` (and `.ApplicationCommon` if needed) to the test project —
+none exists in the repo today, and slice 6's hook lives on an `internal`
+method. Shared fixtures live in a `Fixtures/` folder inside the test
+project; promote to a separate infrastructure project only when a second
+test project exists to share them (don't pre-build the abstraction).
+
+**The poisoned-app fixture is slice 2's hard part, not the production
+diff.** 0001 fixes assembly-level *load* failure
+(`ReflectionTypeLoadException` from `Assembly.GetTypes()` when a type's
+dependency is unresolvable) — a type that merely throws in its
+*constructor* was already isolated before the patch, so a
+constructor-throw fake produces a test that passes on unpatched code and
+proves nothing. The fixture must be a compiled companion app assembly
+loaded through an `AssemblyLoadContext` that withholds one dependency at
+test time. `patches/dns-server/pr1-repro/` in content-filter already
+contains exactly this scenario (AlphaApp/BravoApp/CharlieApp plus a
+deliberately-missing helper assembly); slice 2 ports it into
+`DnsServerCore.Tests/Fixtures/` — this porting must happen before
+slice 11 deletes `patches/`.
+
+### Dispatch extraction (decided, not open)
+
+`WebServiceAppsApi` is a private sealed class nested in the monolithic
+`DnsWebService`, whose constructor does filesystem I/O and whose pipeline
+is a real Kestrel host — patch 0003's `CallAppApiAsync` as written is
+untestable at any granularity below a running server. The RFC decides the
+seam now rather than mid-slice: extract an `internal
+DnsAppApiDispatcher` owning the decision chain — resolve app by name →
+ambiguity check → permission check → invoke handler → classify errors
+into the response envelope — taking plain inputs (an app-lookup delegate,
+a permission-check delegate, parsed request data) and returning a plain
+result, with zero `HttpContext` or `DnsWebService` involvement.
+`WebServiceAppsApi.CallAppApiAsync` becomes a thin HTTP adapter, and
+`WebServiceAppsApi` itself becomes `internal` for adapter-level tests.
+Patch 0003 is folded *into this shape* — fold-verbatim-then-refactor was
+considered and rejected as scheduled rework.
 
 ### Quirk fixes (issue #5)
 
-1. **Silent install success.** An app install whose type sweep throws and
-   registers zero dnsApps currently answers `status:"ok"` with the only
-   evidence in a log file. It must answer `status:"error"` with the loader
-   exception in the envelope. Test-first against the install/load path.
-2. **RFC 6761 / Locally Served Zones interception.** Special-use names are
-   answered before blocking ever sees them. Add a server-config hook so
-   special-use-domain handling can defer to the blocking pipeline for our
-   deployment; default preserves upstream behavior. Test-first: with the
-   flag set, a locally-served name reaches the blocking handler.
+1. **Install/load error visibility — total and partial.** Two distinct
+   failure shapes, both currently silent:
+   - *Zero types register* (the sweep throws, or nothing implements the
+     interfaces): the install/update/load response must be
+     `status:"error"` with the loader exception. No new envelope plumbing
+     exists or is needed — the existing `WebServiceApiMiddleware` /
+     `WebServiceExceptionHandler` pair already produces
+     `status:"error"` + `errorMessage` for any escaping exception; the fix
+     is that the loader *throws* in this case. Install/update must not
+     join the raw-passthrough route list.
+   - *Partial load* (post-0001: some types register, some are skipped):
+     `DnsApplication` exposes a `LoadWarnings` collection (type name +
+     exception summary); the apps API includes a `"loadWarnings"` array in
+     the envelope whenever non-empty — on `status:"ok"` too. This closes
+     the gap 0001 would otherwise reintroduce: 2-of-3 types loading
+     (blocking handler's sibling failed) is exactly the "blocking quietly
+     off" scenario the pivot was about. Test: 2-of-3 partial load
+     surfaces the warning in the response; healthy path regression test
+     asserts no warnings.
+
+2. **RFC 6761 / Locally Served Zones defer-to-blocking.** This is a
+   pipeline-*ordering* change, not an on/off switch, and it composes with
+   an existing flag. Today `DnsServer.AuthoritativeQueryAsync` returns
+   `SpecialZoneManager.Query`'s synthetic answer before the blocking
+   handlers ever run, gated by the existing `LocallyServedDnsZones` bool
+   (default `true`), which covers RFC 6303 reverse zones, RFC 8375
+   `home.arpa`, and RFC 6761 forward names together — flipping it off
+   kills all three and sends the queries to real recursion. Design:
+   - New narrow setting `specialUseNamesDeferToBlocking` (default
+     `false`), applying only to the RFC 6761 *forward-name* subset of the
+     special zones, and only effective when `LocallyServedDnsZones` is
+     `true` (when that is `false` nothing is intercepted and this setting
+     is moot — interaction stated and tested).
+   - When set: for names in the subset, run the blocking-handler pass
+     *before* returning the special-zone answer. Blocked → the blocking
+     response. Not blocked → **still return the special-zone synthetic
+     answer, never fall through to recursion.** This invariant is the
+     load-bearing line: a naive "skip the shortcut" implementation would
+     leak RFC-1918 reverse lookups and `localhost` queries to upstream
+     resolvers.
+   - Tests (three, not two): blocked special-use name gets the blocking
+     response; unblocked special-use name still gets the synthetic answer
+     with no recursion attempted; `LocallyServedDnsZones=false` behaves
+     identically with the new setting on or off.
 
 ### CI (issue #3)
 
-GitHub Actions in this repo: restore, build, run `DnsServerCore.Tests` on
-every push/PR; on `develop`, additionally build and push the server image
-to `ghcr.io/coreyleavitt/urostigma` (private). The image build uses this
-repo's existing `Dockerfile` — no patch-application step exists to remove
-on this side; the removal happens in content-filter (below).
-`Dockerfile.patched-server` in content-filter retires rather than moving.
+**TechnitiumLibrary provisioning comes first — without it nothing
+builds.** Every job (and every implementer) needs a sibling clone of
+`TechnitiumSoftware/TechnitiumLibrary` at a **pinned tag paired with the
+current upstream base** (today: the tag matching DnsServer v15.4.0, as
+content-filter's Dockerfiles already pin), with
+`TechnitiumLibrary.ByteTree`, `.Net`, and `.Security.OTP` built Release
+before this solution restores. A checked-in script
+(`build/get-technitiumlibrary.sh`, reading the pin from one file) serves
+both CI and local setup; the pin bumps only alongside upstream merges
+(sync policy below). No submodule — that would be fine for CI but the
+`HintPath`s expect a sibling path and editing every `.csproj` creates
+permanent merge surface for zero gain.
 
-**Build auth:** content-filter CI and local builds pull the private GHCR
-image with a fine-grained PAT (`read:packages`) stored as a secret /
-`docker login`. A deploy key is not needed once consumption is
-image-based rather than clone-based — that is the simplification issue #2
-anticipated.
+Workflow shape on push/PR: checkout → provision TechnitiumLibrary (pin) →
+restore/build the Linux project set (`DnsServerApp`, `DnsServerCore`,
+`DnsServerCore.ApplicationCommon`, `DnsServerCore.HttpApi`) → run
+`DnsServerCore.Tests`. NuGet and TechnitiumLibrary build output are
+cached keyed on the pin.
+
+**Image build:** the repo's existing `Dockerfile` does not build — it
+copies a host-side `publish/` directory. CI uses a new, self-contained
+multi-stage `Dockerfile.sovereign` (SDK stage: provision
+TechnitiumLibrary + `dotnet publish DnsServerApp` → runtime stage),
+inheriting its logic from content-filter's `Dockerfile.patched-server`,
+which retires. Upstream's `Dockerfile` is left untouched (no merge
+surface). The image is labeled with `org.opencontainers.image.revision`
+(the git SHA) so every published image is traceable to its commit. The
+publish job runs only on `develop` and **requires the test job to have
+passed on the same commit**. Slice 9 also repoints this repo's own
+`docker-compose.yml` (which still names upstream's Docker Hub image) at
+the published image.
+
+**Tagging (decided):** immutable `<upstream-version>-sovereign.<n>` (e.g.
+`15.4.0-sovereign.1`); `n` increments per publish against that upstream
+base and resets on an upstream bump. No moving `latest`/`develop` tag is
+consumed by anything. Consumers pin an immutable tag and bump it
+deliberately — freshness-by-explicit-bump is the program's "merges on our
+schedule" philosophy applied to images, and it replaces the
+"built-not-pulled so nothing goes stale" property the fixture is giving
+up. **Rollback is repinning the previous tag** — one-line change in any
+consumer, no republish needed; tags are never overwritten.
+
+**Build auth (decided):** content-filter's CI gets image access via the
+GHCR package's *Manage Actions access* grant to that repo — its own
+`GITHUB_TOKEN` can then pull, with no rotating secret at all. A classic
+PAT (`read:packages`) exists only for humans pulling locally
+(fine-grained PATs are rejected: GHCR support for them has documented
+gaps). Two guardrails stated because content-filter is public: the
+package grant/token is exercised only on `push`/`workflow_dispatch`/
+same-repo-PR triggers, never via `pull_request_target`; and in the
+integration/perf jobs the `docker login ghcr.io` must happen on the **host
+runner before** the socket-mounted (`-v /var/run/docker.sock`) containers
+run — Testcontainers' pulls execute on the host daemon, so credentials
+inside the SDK container are inert.
 
 ### Upstream sync policy (issue #4)
 
 A written policy at `docs/UPSTREAM-SYNC.md`:
 
-- **Triggers:** security fixes always, promptly; features on demand only.
-- **Procedure:** `git merge` from the upstream remote (never rebase — our
-  commits are permanent and published to consumers).
+- **Triggers, mechanically:** watch `TechnitiumSoftware/DnsServer`
+  releases (GitHub release notifications on the upstream repo). A release
+  whose notes mention a CVE or security fix starts a sync within one
+  week; feature releases are merged only when something in them is
+  wanted.
+- **Procedure:** `git merge` from the upstream remote, never rebase. The
+  honest rationale: published images carry `image.revision` SHAs and the
+  provenance record cites commits — a rebase orphans every SHA anyone has
+  written down. (Consumers pull image tags, not commits; the audit trail
+  is what needs history stability.)
+- **Paired pin:** every upstream merge bumps the TechnitiumLibrary pin to
+  the matching release tag in the same PR — the two versions are one
+  fact, never independent variables.
 - **Conflict ownership:** we own the resolution in files we have diverged
-  in: `DnsApplication.cs`, `WebServiceAppsApi.cs`, `DnsWebService.cs`, and
-  the list grows as quirk fixes land; the sync policy doc keeps the
-  authoritative list.
+  in: `DnsApplication.cs`, `WebServiceAppsApi.cs`, `DnsWebService.cs`,
+  growing as quirk fixes land; the policy doc keeps the authoritative
+  list.
 - **Provenance clause (gap 8):** after a merge session, engine work on any
   subsystem the merge touched starts from the spec or wire corpus
   (syconium CONTRIBUTING rule 4), never from memory of the diff.
@@ -116,45 +290,101 @@ A written policy at `docs/UPSTREAM-SYNC.md`:
   re-survey the `ApplicationCommon` SDK surface for breaking drift against
   the plugin — carries into the policy.
 
-### Consumer cutover
+### Consumer cutover — two patterns, not one
 
-With the image published, the six content-filter Dockerfiles replace their
-clone-and-patch preamble with `FROM ghcr.io/coreyleavitt/urostigma:<tag>`
-(or a pull in compose), `patches/dns-server/` is deleted, and `UPSTREAM.md`
-is rewritten to describe the new relationship. The integration fixture
-consumes the same image CI publishes — one build, every consumer.
+The six Dockerfiles split by what they actually consume, and two named
+artifacts sit outside the Dockerfiles entirely:
+
+**(a) Compile-reference consumers** — `Dockerfile.build`, `.test`,
+`.benchmarks`, `.coyote` build `DnsServerCore.ApplicationCommon` (and
+clone TechnitiumLibrary) purely so `ContentFilter.csproj`'s `HintPath`s
+resolve. Cutover: multi-stage
+`COPY --from=ghcr.io/coreyleavitt/urostigma:<tag>` of
+`DnsServerCore.ApplicationCommon.dll` *and* the `TechnitiumLibrary.*.dll`
+set out of the published image (slice 10 first verifies both are present
+in the publish output and records their paths), with the `HintPath`
+targets in the three consuming `.csproj`s updated to the copy
+destination. This kills the TechnitiumLibrary clone in these four
+Dockerfiles too. Publishing `ApplicationCommon` as a NuGet package was
+considered and deferred to RFC-013, where a package feed and version
+contract exist anyway; `COPY --from` needs no new publishing machinery
+now.
+
+**(b) Runtime consumers** — `Dockerfile.integration-test` and
+`.perf-comparison` get their server not from a Dockerfile `FROM` but from
+`BaseTechnitiumFixture.cs`, which builds `Dockerfile.patched-server` at
+test-run time via `ImageFromDockerfileBuilder`. Cutover is a **C# change**:
+the builder is replaced with `.WithImage("ghcr.io/coreyleavitt/urostigma:
+<pinned-tag>")`; `PatchedServerImageTag`, `BuildPatchedServerImageAsync`,
+and `FindPatchesDirectory` retire; the fixture's "built, not pulled"
+comment is replaced with the freshness-by-explicit-bump rationale. The
+two CI jobs gain the host-daemon `docker login` from Build auth.
+
+**(c) Scripts and compose** — `build-dns-server.sh` retires (its job no
+longer exists); `docker-compose.example.yaml`'s `image:` line and setup
+comments are rewritten to pull the published image.
+
+**(d) History preservation** — before `patches/dns-server/` is deleted:
+`UPSTREAM.md` (the only record of PR #2092's submission and decline, and
+the abandoned PR #2 draft) is copied to this repo as
+`docs/UPSTREAM-HISTORY.md`; `pr1-repro/` has already been ported into
+test fixtures by slice 2. Nothing else in `patches/` carries information
+not now in commits.
 
 ## Slices
 
-Each slice is a `/tdd` unit: test-first where behavior changes, green and
-refactored before the next begins.
+Each slice is a `/tdd` unit where behavior changes; slices 7–8 are
+infrastructure verified by execution (a dry run of the same commands,
+then a green Actions run, then a scratch `docker pull` with no ambient
+credentials), not by xUnit. CI lands after the behavior slices
+deliberately: local `dotnet test` is the safety net during 1–6; 7–8
+automate what is already green.
 
-1. **Found `DnsServerCore.Tests`; fold patch 0001** with tests proving
-   per-type isolation (one poisoned type registers nothing; siblings load).
-2. **Fold patch 0002** (`IDnsApplicationApiHandler`): interface lands; test
-   proves a fake handler is discovered by the type sweep.
-3. **Fold patch 0003** (`/api/apps/call`): dispatch unit tests — named app
-   found/missing, handler invoked, error envelope on handler throw.
-4. **Quirk: install/load silent success** answers `status:"error"` with the
-   loader exception in the envelope; regression test for the healthy path.
-5. **Quirk: RFC 6761 hook** behind server config, default-off; tests for
-   both flag states.
-6. **CI: build + test workflow** on push/PR (no image yet).
-7. **CI: image publish** to private GHCR on `develop`, with the PAT-based
-   pull documented for consumers.
-8. **Sync policy doc** (`docs/UPSTREAM-SYNC.md`) per the design above —
-   reviewed as a doc slice, no code.
-9. **Consumer cutover in content-filter:** six Dockerfiles consume the
-   image; `patches/dns-server/` deleted; `UPSTREAM.md` rewritten; that
-   repo's CI green against the published image.
+1. **Buildable ground.** `build/get-technitiumlibrary.sh` with the pin
+   file; solution builds locally from a fresh clone by following one
+   documented step; found `DnsServerCore.Tests` (pinned packages,
+   `InternalsVisibleTo`, `Fixtures/` folder) with one smoke test green.
+2. **Poisoned-app fixture; fold 0001.** Port `pr1-repro` into
+   `Fixtures/`; build the withheld-dependency `AssemblyLoadContext`
+   harness; write the isolation test and watch it fail on the unpatched
+   sweep (a constructor-throw fake is *not* acceptable RED — it passes
+   unpatched); fold 0001; green. Delete stale branch
+   `fix/app-type-discovery`.
+3. **Fold 0002** (`IDnsApplicationApiHandler`, with corrected copyright
+   header): test proves a fake handler implementing the interface is
+   discovered by the sweep.
+4. **`DnsAppApiDispatcher` extraction; fold 0003 into it.** Dispatch
+   tests: app found/missing/ambiguous, permission denied, handler
+   invoked, handler-throw classified into the error envelope;
+   `WebServiceAppsApi` becomes `internal`, adapter kept thin.
+5. **Quirk 1: install/load visibility.** Zero-registration →
+   `status:"error"` via existing exception envelope (no new plumbing);
+   partial load → `loadWarnings` array (2-of-3 test with the poisoned
+   fixture); healthy-path regression.
+6. **Quirk 2: RFC 6761 defer-to-blocking** per the design: the three
+   tests including the no-recursion invariant and the
+   `LocallyServedDnsZones` interaction.
+7. **CI: build + test workflow** with TechnitiumLibrary provisioning and
+   caching; verification by execution.
+8. **CI: image publish.** `Dockerfile.sovereign`, immutable
+   `-sovereign.<n>` tag, `image.revision` label, publish gated on tests;
+   repoint this repo's `docker-compose.yml`; verify with a scratch pull
+   using the documented auth path.
+9. **Sync policy doc** (`docs/UPSTREAM-SYNC.md`) per the design, plus
+   `docs/UPSTREAM-HISTORY.md` preserving the PR #2092 record.
+10. **Cutover A (compile-reference consumers), in content-filter:**
+    verify DLL paths in the published image; rewrite the four
+    Dockerfiles to `COPY --from`; update the three `.csproj` `HintPath`s;
+    that repo's build/test/benchmarks/coyote CI jobs green.
+11. **Cutover B (runtime consumers + scripts), in content-filter:**
+    `BaseTechnitiumFixture.cs` pulls the pinned tag; host-daemon logins in
+    the two CI jobs; `build-dns-server.sh` retired;
+    `docker-compose.example.yaml` rewritten; **then** delete
+    `patches/dns-server/`; full content-filter CI green against the
+    published image.
 
-## Open questions (for the architect rounds)
+## Open questions
 
-- Slice 3's test seam: `DnsWebService` is monolithic — is a thin extraction
-  of the dispatch logic acceptable now, or do we test through the running
-  service only and accept coarser assertions until RFC-012?
-- RFC 6761 hook placement: server-level config vs. per-app opt-in; and does
-  default-off match issue #5's intent for *our* deployment (which wants it
-  on)?
-- Image tagging scheme: track upstream version (`15.4.0-sovereign.1`) vs.
-  independent semver from this repo.
+None. Round 1 resolved all three original open questions (dispatch seam:
+extract now; RFC 6761 surface: narrow flag with ordering semantics and
+the no-recursion invariant; tagging: `<upstream>-sovereign.<n>`).

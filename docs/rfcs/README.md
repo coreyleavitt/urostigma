@@ -8,6 +8,13 @@ master index; 001–009 predate it and live in technitium-content-filter.
 Statuses: Stub → Draft → Accepted (two architect rounds applied) →
 Implemented.
 
+**Division of labor:** RFCs own design (the how, the why, the slices);
+issues own status (open/closed, discussion, blockers); MIGRATION.md owns
+the map. Every roadmap issue carries a "Design home" comment pointing at
+its RFC. While an RFC is a Stub, its issues' text is authoritative (the
+stubs were derived from them); once it goes Draft, design changes happen
+only in the RFC and, on conflict, the RFC wins.
+
 | RFC | Repo | Title | Status | Depends on |
 |---|---|---|---|---|
 | 001–009 | content-filter | See [that repo's index](https://github.com/coreyleavitt/technitium-content-filter/blob/main/docs/rfcs/README.md) | mixed | — |

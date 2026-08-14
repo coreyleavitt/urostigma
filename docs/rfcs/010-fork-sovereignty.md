@@ -333,6 +333,18 @@ not now in commits.
 
 ## Slices
 
+Sequencing note (why content-filter appears in the fork's founding RFC at
+all): content-filter's pipeline builds the server production actually
+runs. Once quirk fixes land, the fork diverges from upstream+patches, so
+un-cut-over consumers would be building a *different server* than this
+repo — and RFC-012's characterization baseline must be captured against
+the server we run. Slices 1–9 unblock RFCs 011/012/013 and nothing in
+the engine program waits on the cutover; slices 10–11 are last, and
+their hard deadline is before RFC-012 captures its corpus (one build,
+one truth). The folded 0002/0003 surfaces are transitional — RFC-015
+replaces them — but they are in production use today (the web UI's
+explain proxy), so the fork must be able to build them until then.
+
 Each slice is a `/tdd` unit where behavior changes; slices 7–8 are
 infrastructure verified by execution (a dry run of the same commands,
 then a green Actions run, then a scratch `docker pull` with no ambient

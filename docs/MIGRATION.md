@@ -82,6 +82,34 @@ unscheduled.
 - **Provenance wall:** syconium CONTRIBUTING rules apply to every engine
   line, forever.
 
+## Web stack (decided 2026-08-13)
+
+- **API:** Giraffe handlers in F#, shipped from syconium as `Syconium.Api`
+  (Apache) and mounted by this host into its existing Kestrel pipeline —
+  the host contributes routing and auth wiring only. Giraffe chosen for
+  maturity and a small abandonment blast radius (thin functional layer
+  over ASP.NET Core; handlers migrate mechanically to minimal APIs if
+  ever needed). Typed contracts via shared F# DTO types.
+- **Console:** standalone Blazor WebAssembly (`Syconium.Console`): C#
+  components over F# logic libraries compiled into the same bundle,
+  served by the host as static files, talking exclusively to the admin
+  API. WASM over Interactive Server deliberately: admin actions restart
+  the web service, and a server-circuit UI dies mid-action on exactly the
+  restarts it triggers; a WASM console survives them in the browser.
+  Trimming on, AOT off unless proven needed, no mixed render modes.
+  Rejected alternatives: Bolero (thin-team dependency lagging Blazor's
+  release cadence; moot once C# components are acceptable), Fable/React
+  (Node toolchain, unwanted ecosystem), htmx (fine, but the component
+  SPA model was preferred).
+- **Repo rule:** repo count stays pinned to license count (two, end
+  state). The frontend is a project in syconium's solution, not a repo.
+  C# is welcome in syconium — the wall is provenance, not language. The
+  Technitium console (GPL) keeps serving residual host features until
+  swaps retire them; its `www/` is never ported into the new console.
+- **Syconium solution shape:** `Syconium.Core`, `Syconium.Synthesis`,
+  `Syconium.Cache`, `Syconium.Identity`, `Syconium.Api`,
+  `Syconium.Console`, `Syconium.Harness`, `tests/`.
+
 ## Gap review (2026-08-13) — all filed
 
 1. ContentFilter.Core move had no issue → **syconium#5**, sub-issue of

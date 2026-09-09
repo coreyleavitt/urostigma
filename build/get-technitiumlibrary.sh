@@ -53,16 +53,18 @@ else
     git clone --branch "$PINNED_TAG" --depth 1 "$REMOTE_URL" "$CLONE_DIR"
 fi
 
-# Projects needed to produce the five DLLs DnsServerCore references:
-# TechnitiumLibrary.dll, .ByteTree.dll, .IO.dll, .Net.dll, .Security.OTP.dll.
-# Each project's Release OutputPath is ..\bin\ (relative to the project
-# folder), so building these five in any order lands every DLL in
+# Projects needed to produce the six DLLs the tree references across
+# DnsServerCore (five) and Apps/FailoverApp (adds .Net.Mail.dll):
+# TechnitiumLibrary.dll, .ByteTree.dll, .IO.dll, .Net.dll, .Net.Mail.dll,
+# .Security.OTP.dll. Each project's Release OutputPath is ..\bin\ (relative
+# to the project folder), so building these in any order lands every DLL in
 # TechnitiumLibrary/bin/ alongside each other.
 PROJECTS=(
     TechnitiumLibrary
     TechnitiumLibrary.ByteTree
     TechnitiumLibrary.IO
     TechnitiumLibrary.Net
+    TechnitiumLibrary.Net.Mail
     TechnitiumLibrary.Security.OTP
 )
 
@@ -77,6 +79,7 @@ REQUIRED_DLLS=(
     TechnitiumLibrary.ByteTree.dll
     TechnitiumLibrary.IO.dll
     TechnitiumLibrary.Net.dll
+    TechnitiumLibrary.Net.Mail.dll
     TechnitiumLibrary.Security.OTP.dll
 )
 
@@ -87,4 +90,4 @@ for dll in "${REQUIRED_DLLS[@]}"; do
     fi
 done
 
-echo "TechnitiumLibrary provisioned at $CLONE_DIR (tag $PINNED_TAG); all five DLLs present in $BIN_DIR."
+echo "TechnitiumLibrary provisioned at $CLONE_DIR (tag $PINNED_TAG); all required DLLs present in $BIN_DIR."

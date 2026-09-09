@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  # Kept as a separate literal (not derived from DOTNET_VERSION) so it can
+  # anchor the cache key below independently of the floating minor/patch.
+  DOTNET_SDK_MAJOR: '10'
+
+jobs:
+  build-test:
+    # linux/amd64 only: Windows-only projects are out of CI per RFC-010.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # Shared key ingredients: the TechnitiumLibrary pin (a pin bump
+      # invalidates both caches together), runner OS, and .NET SDK major
+      # version — prebuilt Release DLLs surviving an SDK image bump would
+      # surface as runtime weirdness, not a build failure.
+      - name: Compute cache key
+        id: cache-key
+        run: |
+          echo "value=${{ runner.os }}-dotnet${{ env.DOTNET_SDK_MAJOR }}-${{ hashFiles('build/technitiumlibrary.version') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ steps.cache-key.outputs.value }}
+          restore-keys: |
+            nuget-${{ runner.os }}-dotnet${{ env.DOTNET_SDK_MAJOR }}-
+
+      - name: Cache TechnitiumLibrary build output
+        uses: actions/cache@v4
+        with:
+          # get-technitiumlibrary.sh clones to the repo root's sibling
+          # directory (../TechnitiumLibrary), matching DnsServerCore's
+          # HintPaths; actions/cache supports paths outside $GITHUB_WORKSPACE.
+          path: ${{ github.workspace }}/../TechnitiumLibrary
+          key: technitiumlibrary-${{ steps.cache-key.outputs.value }}
+
+      - name: Provision TechnitiumLibrary
+        run: build/get-technitiumlibrary.sh
+
+      # Never `dotnet build DnsServer.sln` here: the solution also contains
+      # Windows-only projects that fail to build on Linux runners. Building
+      # DnsServerApp.csproj transitively covers DnsServerCore,
+      # .ApplicationCommon, and .HttpApi.
+      - name: Build DnsServerApp
+        run: dotnet build DnsServerApp/DnsServerApp.csproj -c Release
+
+      # Build-only (not test) every Apps/*.csproj plugin, so an in-tree
+      # ApplicationCommon change that breaks a plugin fails CI instead of
+      # waiting for the manual SDK re-survey.
+      - name: Build Apps plugins
+        run: |
+          set -euo pipefail
+          count=0
+          for proj in Apps/*/*.csproj; do
+            echo "Building $proj..."
+            dotnet build "$proj" -c Release
+            count=$((count + 1))
+          done
+          echo "Built $count Apps projects."
+
+      - name: Run tests
+        run: dotnet test DnsServerCore.Tests

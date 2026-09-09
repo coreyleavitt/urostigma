@@ -1,10 +1,9 @@
-name: CI
+name: Release
 
 on:
   push:
-    branches: [develop]
-  pull_request:
-    branches: [develop]
+    tags:
+      - '*-sovereign.*'
 
 permissions:
   contents: read
@@ -16,8 +15,12 @@ env:
   DOTNET_SDK_MAJOR: '10'
 
 jobs:
+  # A tag-push run is a separate workflow run from any develop run and
+  # cannot see its `needs:` results (cross-run checks interrogation is the
+  # fragile machinery RFC-010 rejects), so this mirrors ci.yml's
+  # build-test job verbatim -- duplicate execution is the accepted cost of
+  # a self-contained release gate.
   build-test:
-    # linux/amd64 only: Windows-only projects are out of CI per RFC-010.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,10 +29,6 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      # Shared key ingredients: the TechnitiumLibrary pin (a pin bump
-      # invalidates both caches together), runner OS, and .NET SDK major
-      # version — prebuilt Release DLLs surviving an SDK image bump would
-      # surface as runtime weirdness, not a build failure.
       - name: Compute cache key
         id: cache-key
         run: |
@@ -46,25 +45,15 @@ jobs:
       - name: Cache TechnitiumLibrary build output
         uses: actions/cache@v4
         with:
-          # get-technitiumlibrary.sh clones to the repo root's sibling
-          # directory (../TechnitiumLibrary), matching DnsServerCore's
-          # HintPaths; actions/cache supports paths outside $GITHUB_WORKSPACE.
           path: ${{ github.workspace }}/../TechnitiumLibrary
           key: technitiumlibrary-${{ steps.cache-key.outputs.value }}
 
       - name: Provision TechnitiumLibrary
         run: build/get-technitiumlibrary.sh
 
-      # Never `dotnet build DnsServer.sln` here: the solution also contains
-      # Windows-only projects that fail to build on Linux runners. Building
-      # DnsServerApp.csproj transitively covers DnsServerCore,
-      # .ApplicationCommon, and .HttpApi.
       - name: Build DnsServerApp
         run: dotnet build DnsServerApp/DnsServerApp.csproj -c Release
 
-      # Build-only (not test) every Apps/*.csproj plugin, so an in-tree
-      # ApplicationCommon change that breaks a plugin fails CI instead of
-      # waiting for the manual SDK re-survey.
       - name: Build Apps plugins
         run: |
           set -euo pipefail
@@ -81,21 +70,10 @@ jobs:
 
   publish:
     needs: build-test
-    # This workflow's other trigger, pull_request, must never publish --
-    # only a push to develop does.
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    # Actions does not serialize runs per branch by default; two rapid
-    # pushes to develop finishing out of order would otherwise revert the
-    # moving tag to an older image. Non-cancelling keeps only the latest
-    # *queued* run once the in-flight one completes -- latest-wins, not
-    # full serialization.
-    concurrency:
-      group: publish-develop
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -110,6 +88,9 @@ jobs:
           context: .
           file: Dockerfile.sovereign
           push: true
-          tags: ghcr.io/coreyleavitt/urostigma:develop
+          # github.ref_name is the tag name itself (e.g. 15.4.0-sovereign.1)
+          # for a tag-push trigger -- the image tag and the git tag are the
+          # same fact by construction.
+          tags: ghcr.io/coreyleavitt/urostigma:${{ github.ref_name }}
           build-args: |
             REVISION=${{ github.sha }}

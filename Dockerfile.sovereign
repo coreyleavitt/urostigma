@@ -1,0 +1,55 @@
+# Self-contained multi-stage build (RFC-010 slice 10) -- unlike the
+# upstream `Dockerfile`, which only copies a host-side `publish/` directory,
+# this one builds the fork from source. Must stay buildable under
+# `DOCKER_BUILDKIT=0`: content-filter's Testcontainers fixture builds it
+# through the classic Docker API, which has no BuildKit support (no
+# `RUN --mount`, no `--secret`, no heredoc `RUN`, no `--link`).
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+
+# TechnitiumLibrary is public and the fork source arrives via this COPY --
+# no clone credentials needed at build time.
+WORKDIR /src/urostigma
+COPY . .
+
+# get-technitiumlibrary.sh clones TechnitiumLibrary as a sibling of the
+# repo root it's run from ($REPO_ROOT/..), matching DnsServerCore's
+# ..\..\TechnitiumLibrary\bin\*.dll HintPaths. Rooting the repo at
+# /src/urostigma makes that sibling /src/TechnitiumLibrary -- no script
+# changes needed.
+RUN build/get-technitiumlibrary.sh
+
+RUN dotnet publish DnsServerApp/DnsServerApp.csproj -c Release -o /publish
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+
+# Mirrors upstream Dockerfile's runtime setup (libmsquic for DNS-over-QUIC,
+# dnsutils for troubleshooting, /etc/dns as the default state directory --
+# users volume-mount to it or override CMD), rewritten without the
+# BuildKit-only heredoc RUN / ADD --link / COPY --link forms upstream uses.
+ADD https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb /packages-microsoft-prod.deb
+RUN dpkg -i /packages-microsoft-prod.deb && rm /packages-microsoft-prod.deb \
+    && apt-get update && apt-get install -y libmsquic dnsutils iputils-ping \
+    && apt-get clean -y && rm -rf /var/lib/apt/lists/* \
+    && mkdir /etc/dns
+
+WORKDIR /opt/technitium/dns
+COPY --from=build /publish /opt/technitium/dns
+
+ENTRYPOINT ["/usr/bin/dotnet", "/opt/technitium/dns/DnsServerApp.dll"]
+CMD ["/etc/dns"]
+
+EXPOSE \
+  53/udp 53/tcp      \
+  853/udp 853/tcp    \
+  443/udp 443/tcp    \
+  80/tcp 8053/tcp    \
+  5380/tcp 53443/tcp \
+  67/udp
+
+# https://specs.opencontainers.org/image-spec/annotations/ -- revision and
+# source are corrected to point at this fork and its actual commit, not
+# upstream's repo (which is what an inherited label would otherwise claim).
+ARG REVISION=unknown
+LABEL org.opencontainers.image.revision="${REVISION}"
+LABEL org.opencontainers.image.source="https://github.com/coreyleavitt/urostigma"

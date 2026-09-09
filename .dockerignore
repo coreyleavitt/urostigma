@@ -1,0 +1,9 @@
+# Host-side build output must never enter the build context: obj/ carries
+# absolute host paths (project.assets.json) that break restore inside the
+# container, and bin/ would let a stale local build masquerade as fresh.
+**/bin/
+**/obj/
+**/publish/
+**/TestResults/
+.vs/
+.git/

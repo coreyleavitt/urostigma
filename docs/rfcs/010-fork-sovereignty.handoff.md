@@ -7,8 +7,8 @@
 
 ## Slices (13 after round-3 re-slicing)
 - [x] 1 Buildable ground + liveness proof — commits 2c130890 + 4c473245; liveness: published artifact booted in stock aspnet:10.0 container, dig answered NOERROR on example.com; 3 tests green (AuthZoneManager.GetParentZone via InternalsVisibleTo)
-- [ ] 2 Poisoned-app fixture (publish-shaped, production load path); fold 0001; delete stale branch (in progress: delegated agent)
-- [ ] 3 Fold 0002 + 0003's DnsApplication.cs discovery hunk; discovery + ambiguity tests
+- [x] 2 Poisoned-app fixture + fold 0001 — commit 70ef70d6; RED proven on unpatched sweep (healthy AlphaApp dropped with whole assembly), GREEN after fold (2 of 3 types register); suite 4/4; stale branch fix/app-type-discovery deleted from origin
+- [ ] 3 Fold 0002 + 0003's DnsApplication.cs discovery hunk; discovery + ambiguity tests (in progress: delegated agent)
 - [ ] 4 DnsAppApiDispatcher (single entry, internal two-phase, bodyReader delegate); fold rest of 0003
 - [ ] 5 Quirk 1: dispose-then-throw in LoadApplicationAsync; uninstall-unloaded recovery; AppLoadWarning; WriteAppAsJson internal static
 - [ ] 6 Quirk 2a: suffix-inclusive static IsForwardSpecialUseName (+ subdomain/reverse tests)

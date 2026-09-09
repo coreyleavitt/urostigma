@@ -16,7 +16,7 @@
 - [x] 8 Quirk 2c — commits 9d4567dd + 448ffaf2; SpecialUseDeferralDecision unit (two delegates, tri-state collapse) + deferEligible threaded (true only via ProcessRequestAsync→ProcessQueryAsync listener paths; false for DirectQueryAsync/CNAME/ANAME/cache-refresh/ResolverDnsCache); Authoritative stamped on synthetic branch only (reference-equality); 2 integration wiring tests via TestDnsServerFactory + real BlockedZoneManager; reprocess-bypass half verified by inspection (private method, socket-bound); suite 49/49
 - [x] 9 CI build+test — commit 00f3b871; .github/workflows/ci.yml; dry run clean (27/27 Apps, 49/49 tests); provisioning script extended for FailoverApp's Net.Mail DLL (now six); Actions run 34381256531 GREEN on develop
 - [x] 10 CI image publish — commit 42ade5cb (Dockerfile.sovereign classic-builder-verified, .dockerignore, ci.yml publish job needs:build-test + non-cancelling publish-develop group, release.yml self-gated tag workflow); Actions run 34382213518 GREEN; scratch pull ghcr.io/coreyleavitt/urostigma:develop (fresh docker login via gh token, read:packages) → booted, dig NOERROR + HTTP 200; compose repointed to the GHCR image after the run-proof. NOTE: GHCR package is private (inherits repo visibility — correct until RFC-020); content-filter's future pulls need the slice-12 PAT.
-- [ ] 11 Sync policy doc + UPSTREAM-HISTORY; delete FUNDING.yml
+- [x] 11 Sync policy + history — commit 3f339290 + outcome addendum; docs/UPSTREAM-SYNC.md (policy incl. 7-file conflict-ownership list), docs/UPSTREAM-HISTORY.md (verbatim UPSTREAM.md copy + primary-source outcome record: PR #2092 closed unmerged 2026-08-11, "This is not a bug" comment verified via GitHub API), FUNDING.yml deleted, CLAUDE.md qualifier dropped
 - [ ] 12 Cutover 1 — repoint: six Dockerfiles + workflow/script --secret threading + pin ARG; CI green
 - [ ] 13 Cutover 2 — baked-clone COPY successor; fixture two-tier rewrite; delete patched-server + patches/; operator redeploy
 
@@ -34,7 +34,15 @@ RFC; rounds 2–3 honored this. Roadmap runs as parallel engine/host
 tracks (MIGRATION.md "Tracks").
 
 ## Open forks (awaiting Corey)
-- none — all three rounds' findings carried confident recommendations, applied
+- **Slice-12 manual prerequisite (blocking the grind):** create a GitHub
+  **classic PAT** with `repo` (read) + `read:packages`, then store it as a
+  secret in technitium-content-filter (suggested name `UROSTIGMA_CLONE_TOKEN`):
+  `gh secret set UROSTIGMA_CLONE_TOKEN -R coreyleavitt/technitium-content-filter`
+  Classic (not fine-grained) per RFC — GHCR support for fine-grained PATs has
+  documented gaps. Slices 12–13 (content-filter cutover) cannot start without
+  it. Also required by slice 12: choosing `<n>` and pushing the first
+  `15.4.0-sovereign.<n>` git tag (human-cut per RFC) — or delegate the tag
+  push back to the grind once the PAT exists.
 
 ## Key decisions (round 3, 2026-09-09)
 - **True upstream base stated:** develop = v15.4.0 + 15 unreleased

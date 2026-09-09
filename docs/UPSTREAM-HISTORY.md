@@ -18,6 +18,16 @@ for the generic per-app API port, exactly as it stood in
 content-filter at the time of copying. Nothing below has been rewritten;
 only this preamble is new.
 
+**Outcome (primary-source record, verified 2026-09-09 via the GitHub
+API):** PR #2092 was closed unmerged on 2026-08-11 by the maintainer
+(ShreyasZare) with one comment: "Thanks for the PR. The current
+implementation is intended for the app to fail completely instead of
+having parts of it loaded. This is not a bug. Having a few interfaces
+loaded will cause the app to be used by the DNS server and may cause
+errors per DNS query being processed due to the root cause". RFC-010's
+"On upstream's objection to 0001" section engages this argument on the
+merits and records why the fork chooses partial-load anyway.
+
 ---
 
 # Upstream PR drafts

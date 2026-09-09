@@ -12,8 +12,8 @@
 - [x] 4 DnsAppApiDispatcher + 0003 fold — commits 34a0efd5 + 40760c84; 7 dispatcher-pure tests incl. denied-never-reads-body; suite 13/13; WebServiceAppsApi now internal; adapter maps DnsAppApiAccess (dispatcher stays free of PermissionFlag/AuthManager); Outcome carries Exception for HandlerThrew logging; fixture publisher serialized under static lock (xunit parallel race fix)
 - [x] 5 Quirk 1 — commits 07d45fd4 + 9b07b08f + 8cd73f0b; 5 behaviors RED→GREEN; suite 18/18; AppLoadWarning(Message, TypeName=null); WriteAppAsJson internal static with Version param; loadWarnings surfaces on list/install/update alike (RFC-literal, lines 293–296 — the round-1 "install/update only" note was superseded; verified correct call); TestDnsServerFactory fixture available (~150ms, no sockets)
 - [x] 6 Quirk 2a — commit 1d229685; eight-name set confirmed exact in SpecialZoneManager; suffix-inclusive predicate landed; suite 34/34; call-site recon confirms deferEligible must be an explicit param (remoteEP null until ANY_0 coercion at 3913, after the special branch)
-- [ ] 7 Quirk 2b: the setting exists — sovereign.config sidecar + WebServiceSettingsApi get/set (in progress: delegated agent)
-- [ ] 8 Quirk 2c: ordering change (two-delegate unit, deferEligible, terminal blocked + tag)
+- [x] 7 Quirk 2b — commit e898d7b0; SovereignConfig sidecar (Load/Save best-effort, corrupt→defaults) + DnsServer.SpecialUseNamesDeferToBlocking property + two WebServiceSettingsApi hunks (build+inspection verified — class is private nested, InternalsVisibleTo can't reach; persistence layer carries the tests); suite 39/39
+- [ ] 8 Quirk 2c: ordering change (two-delegate unit, deferEligible, terminal blocked + tag) (in progress: delegated agent)
 - [ ] 9 CI: build + test (Apps build-only pass; pin+OS+SDK cache keys)
 - [ ] 10 CI: image publish (tag workflow self-gated; docker run + dig/HTTP probe before compose repoint)
 - [ ] 11 Sync policy doc + UPSTREAM-HISTORY; delete FUNDING.yml

@@ -124,6 +124,8 @@ namespace DnsServerCore.Dns
         IReadOnlyList<IPEndPoint> _localEndPoints;
         readonly LogManager _log;
 
+        SovereignConfig _sovereignConfig = new SovereignConfig(); //fork-owned settings; RFC-010
+
         MailAddress _defaultResponsiblePerson;
         MailAddress _fallbackResponsiblePerson;
 
@@ -614,6 +616,20 @@ namespace DnsServerCore.Dns
                 _log.Write("DNS Server encountered an error while loading DNS config file: " + dnsConfigFile, ex);
                 _log.Write("Note: You may try deleting the DNS config file to fix this issue. However, you will lose DNS settings but, other data wont be affected.");
             }
+
+            LoadSovereignConfig(); //fork-owned settings sidecar; RFC-010
+        }
+
+        /// <summary>Loads the fork-owned sovereign.config sidecar (missing file = defaults). RFC-010.</summary>
+        public void LoadSovereignConfig()
+        {
+            _sovereignConfig = SovereignConfig.Load(_configFolder, _log);
+        }
+
+        /// <summary>Saves the fork-owned sovereign.config sidecar. RFC-010.</summary>
+        public void SaveSovereignConfig()
+        {
+            _sovereignConfig.Save(_configFolder, _log);
         }
 
         public void LoadConfig(Stream s, bool isConfigTransfer)
@@ -8007,6 +8023,13 @@ namespace DnsServerCore.Dns
         {
             get { return _locallyServedDnsZones; }
             set { _locallyServedDnsZones = value; }
+        }
+
+        //fork-owned setting; persisted in sovereign.config, not dns.config; RFC-010
+        public bool SpecialUseNamesDeferToBlocking
+        {
+            get { return _sovereignConfig.SpecialUseNamesDeferToBlocking; }
+            set { _sovereignConfig.SpecialUseNamesDeferToBlocking = value; }
         }
 
         public int ResolverRetries

@@ -306,6 +306,7 @@ namespace DnsServerCore
                 jsonWriter.WriteBoolean("randomizeName", _dnsWebService._dnsServer.RandomizeName);
                 jsonWriter.WriteBoolean("qnameMinimization", _dnsWebService._dnsServer.QnameMinimization);
                 jsonWriter.WriteBoolean("locallyServedDnsZones", _dnsWebService._dnsServer.LocallyServedDnsZones);
+                jsonWriter.WriteBoolean("specialUseNamesDeferToBlocking", _dnsWebService._dnsServer.SpecialUseNamesDeferToBlocking);
 
                 jsonWriter.WriteNumber("resolverRetries", _dnsWebService._dnsServer.ResolverRetries);
                 jsonWriter.WriteNumber("resolverTimeout", _dnsWebService._dnsServer.ResolverTimeout);
@@ -1396,6 +1397,10 @@ namespace DnsServerCore
                             clusterParameters.Add("locallyServedDnsZones", locallyServedDnsZones.ToString());
                         }
 
+                        //fork-owned setting: no cluster propagation (single-operator deployment); RFC-010
+                        if (request.TryGetQueryOrForm("specialUseNamesDeferToBlocking", bool.Parse, out bool specialUseNamesDeferToBlocking))
+                            _dnsWebService._dnsServer.SpecialUseNamesDeferToBlocking = specialUseNamesDeferToBlocking;
+
                         if (request.TryGetQueryOrForm("resolverRetries", int.Parse, out int resolverRetries))
                         {
                             _dnsWebService._dnsServer.ResolverRetries = resolverRetries;
@@ -1765,6 +1770,7 @@ namespace DnsServerCore
                         //save config
                         _dnsWebService.SaveConfigFile();
                         _dnsWebService._dnsServer.SaveConfigFile();
+                        _dnsWebService._dnsServer.SaveSovereignConfig();
                         _dnsWebService._dnsServer.BlockListZoneManager.SaveConfigFile();
                         _dnsWebService._log.SaveConfigFile();
                     }

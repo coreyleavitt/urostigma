@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<!--
+	RFC-010 slice 2 fixture, ported from technitium-content-filter's
+	patches/dns-server/pr1-repro/RfcRepro.App. HintPaths rewritten for this repo's
+	layout (the repro's HintPaths assumed the content-filter container's directory
+	layout). Published via PoisonedAppFixture, not built as part of the solution/
+	DnsServerApp build.
+	-->
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<Nullable>enable</Nullable>
+		<AssemblyName>RfcRepro.App</AssemblyName>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\..\..\DnsServerCore.ApplicationCommon\DnsServerCore.ApplicationCommon.csproj">
+			<Private>false</Private>
+		</ProjectReference>
+		<ProjectReference Include="..\RfcRepro.Helper\RfcRepro.Helper.csproj">
+			<Private>true</Private>
+		</ProjectReference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="TechnitiumLibrary.Net">
+			<HintPath>..\..\..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Net.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+	</ItemGroup>
+
+</Project>

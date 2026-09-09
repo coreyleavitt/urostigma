@@ -40,4 +40,12 @@
 		<None Include="Fixtures\.gitkeep" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<!-- Fixtures\PoisonedApp holds standalone fixture projects (their own .csproj,
+		     built via `dotnet publish` by PoisonedAppFixture) that must not be swept into
+		     this project's own compilation, along with their bin/obj output. -->
+		<Compile Remove="Fixtures\PoisonedApp\**\*.cs" />
+		<None Remove="Fixtures\PoisonedApp\**\*.cs" />
+	</ItemGroup>
+
 </Project>

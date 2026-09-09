@@ -9,8 +9,8 @@
 - [x] 1 Buildable ground + liveness proof — commits 2c130890 + 4c473245; liveness: published artifact booted in stock aspnet:10.0 container, dig answered NOERROR on example.com; 3 tests green (AuthZoneManager.GetParentZone via InternalsVisibleTo)
 - [x] 2 Poisoned-app fixture + fold 0001 — commit 70ef70d6; RED proven on unpatched sweep (healthy AlphaApp dropped with whole assembly), GREEN after fold (2 of 3 types register); suite 4/4; stale branch fix/app-type-discovery deleted from origin
 - [x] 3 Fold 0002 + 0003 discovery hunk — commits 1ee7dd0e (interface, fork header) + 0916ee16 (sweep wiring + tests); suite 6/6; ambiguity shape: `DnsApplicationApiHandler` null + `DnsApplicationApiHandlerAmbiguous` true on >1, discovery never throws
-- [ ] 4 DnsAppApiDispatcher (single entry, internal two-phase, bodyReader delegate); fold rest of 0003 (in progress: delegated agent; unapplied 0003 hunks = DnsWebService.cs route + WebServiceAppsApi.cs CallAppApiAsync/ReadBoundedBodyAsync/WriteRawErrorAsync)
-- [ ] 5 Quirk 1: dispose-then-throw in LoadApplicationAsync; uninstall-unloaded recovery; AppLoadWarning; WriteAppAsJson internal static
+- [x] 4 DnsAppApiDispatcher + 0003 fold — commits 34a0efd5 + 40760c84; 7 dispatcher-pure tests incl. denied-never-reads-body; suite 13/13; WebServiceAppsApi now internal; adapter maps DnsAppApiAccess (dispatcher stays free of PermissionFlag/AuthManager); Outcome carries Exception for HandlerThrew logging; fixture publisher serialized under static lock (xunit parallel race fix)
+- [ ] 5 Quirk 1: dispose-then-throw in LoadApplicationAsync; uninstall-unloaded recovery; AppLoadWarning; WriteAppAsJson internal static (in progress: delegated agent)
 - [ ] 6 Quirk 2a: suffix-inclusive static IsForwardSpecialUseName (+ subdomain/reverse tests)
 - [ ] 7 Quirk 2b: the setting exists — sovereign.config sidecar + WebServiceSettingsApi get/set
 - [ ] 8 Quirk 2c: ordering change (two-delegate unit, deferEligible, terminal blocked + tag)

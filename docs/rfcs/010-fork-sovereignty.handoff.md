@@ -11,8 +11,8 @@
 - [x] 3 Fold 0002 + 0003 discovery hunk — commits 1ee7dd0e (interface, fork header) + 0916ee16 (sweep wiring + tests); suite 6/6; ambiguity shape: `DnsApplicationApiHandler` null + `DnsApplicationApiHandlerAmbiguous` true on >1, discovery never throws
 - [x] 4 DnsAppApiDispatcher + 0003 fold — commits 34a0efd5 + 40760c84; 7 dispatcher-pure tests incl. denied-never-reads-body; suite 13/13; WebServiceAppsApi now internal; adapter maps DnsAppApiAccess (dispatcher stays free of PermissionFlag/AuthManager); Outcome carries Exception for HandlerThrew logging; fixture publisher serialized under static lock (xunit parallel race fix)
 - [x] 5 Quirk 1 — commits 07d45fd4 + 9b07b08f + 8cd73f0b; 5 behaviors RED→GREEN; suite 18/18; AppLoadWarning(Message, TypeName=null); WriteAppAsJson internal static with Version param; loadWarnings surfaces on list/install/update alike (RFC-literal, lines 293–296 — the round-1 "install/update only" note was superseded; verified correct call); TestDnsServerFactory fixture available (~150ms, no sockets)
-- [ ] 6 Quirk 2a: suffix-inclusive static IsForwardSpecialUseName (+ subdomain/reverse tests) (in progress: delegated agent)
-- [ ] 7 Quirk 2b: the setting exists — sovereign.config sidecar + WebServiceSettingsApi get/set
+- [x] 6 Quirk 2a — commit 1d229685; eight-name set confirmed exact in SpecialZoneManager; suffix-inclusive predicate landed; suite 34/34; call-site recon confirms deferEligible must be an explicit param (remoteEP null until ANY_0 coercion at 3913, after the special branch)
+- [ ] 7 Quirk 2b: the setting exists — sovereign.config sidecar + WebServiceSettingsApi get/set (in progress: delegated agent)
 - [ ] 8 Quirk 2c: ordering change (two-delegate unit, deferEligible, terminal blocked + tag)
 - [ ] 9 CI: build + test (Apps build-only pass; pin+OS+SDK cache keys)
 - [ ] 10 CI: image publish (tag workflow self-gated; docker run + dig/HTTP probe before compose repoint)

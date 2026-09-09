@@ -11,7 +11,7 @@ Rules that matter here:
 - No renaming of .NET projects/namespaces — the upstream merge surface
   stays intact.
 - Upstream (TechnitiumSoftware/DnsServer) is read-only merge source;
-  policy in `docs/UPSTREAM-SYNC.md` once RFC-010 lands.
+  policy in `docs/UPSTREAM-SYNC.md`.
 
 ## Compact Instructions
 When compacting, preserve in the summary: the active RFC and its

@@ -51,7 +51,19 @@ namespace DnsServerCore
 
             #region private
 
-            private void WriteAppAsJson(Utf8JsonWriter jsonWriter, DnsApplication application, JsonElement jsonStoreAppsArray = default)
+            /// <summary>
+            /// Writes one installed app's JSON representation: name/description/version, an
+            /// available-update block when <paramref name="jsonStoreAppsArray"/> names a compatible
+            /// newer version, its "dnsApps" array, and a "loadWarnings" array whenever
+            /// <see cref="DnsApplication.LoadWarnings"/> is non-empty -- on a healthy app
+            /// (status:"ok" with zero warnings) the property is omitted entirely, so the existing
+            /// shape for every app that loaded cleanly is unchanged. Shared by
+            /// ListInstalledAppsAsync, InstallAppAsync/DownloadAndInstallAppAsync, and
+            /// UpdateAppAsync/DownloadAndUpdateAppAsync: made internal static (with the server
+            /// version lifted to a parameter, replacing the <c>_dnsWebService._currentVersion</c>
+            /// instance dependency) so tests can call it without constructing a DnsWebService.
+            /// </summary>
+            internal static void WriteAppAsJson(Utf8JsonWriter jsonWriter, DnsApplication application, Version currentServerVersion, JsonElement jsonStoreAppsArray = default)
             {
                 jsonWriter.WriteStartObject();
 
@@ -76,7 +88,7 @@ namespace DnsServerCore
                                 string strServerVersion = jsonVersion.GetProperty("serverVersion").GetString();
                                 Version requiredServerVersion = new Version(strServerVersion);
 
-                                if (_dnsWebService._currentVersion < requiredServerVersion)
+                                if (currentServerVersion < requiredServerVersion)
                                     continue;
 
                                 if ((lastServerVersion is not null) && (lastServerVersion > requiredServerVersion))
@@ -127,6 +139,24 @@ namespace DnsServerCore
                         jsonWriter.WriteBoolean("isQueryLogger", dnsApp.Value is IDnsQueryLogger);
                         jsonWriter.WriteBoolean("isQueryLogs", dnsApp.Value is IDnsQueryLogs);
                         jsonWriter.WriteBoolean("isPostProcessor", dnsApp.Value is IDnsPostProcessor);
+
+                        jsonWriter.WriteEndObject();
+                    }
+
+                    jsonWriter.WriteEndArray();
+                }
+
+                if (application.LoadWarnings.Count > 0)
+                {
+                    jsonWriter.WritePropertyName("loadWarnings");
+                    jsonWriter.WriteStartArray();
+
+                    foreach (AppLoadWarning warning in application.LoadWarnings)
+                    {
+                        jsonWriter.WriteStartObject();
+
+                        jsonWriter.WriteString("message", warning.Message);
+                        jsonWriter.WriteString("typeName", warning.TypeName);
 
                         jsonWriter.WriteEndObject();
                     }
@@ -188,7 +218,7 @@ namespace DnsServerCore
                     foreach (string app in apps)
                     {
                         if (_dnsWebService._dnsServer.DnsApplicationManager.Applications.TryGetValue(app, out DnsApplication application))
-                            WriteAppAsJson(jsonWriter, application, jsonStoreAppsArray);
+                            WriteAppAsJson(jsonWriter, application, _dnsWebService._currentVersion, jsonStoreAppsArray);
                     }
 
                     jsonWriter.WriteEndArray();
@@ -302,7 +332,7 @@ namespace DnsServerCore
                 Utf8JsonWriter jsonWriter = context.GetCurrentJsonWriter();
 
                 jsonWriter.WritePropertyName("installedApp");
-                WriteAppAsJson(jsonWriter, application);
+                WriteAppAsJson(jsonWriter, application, _dnsWebService._currentVersion);
             }
 
             public async Task DownloadAndUpdateAppAsync(HttpContext context)
@@ -331,7 +361,7 @@ namespace DnsServerCore
                 Utf8JsonWriter jsonWriter = context.GetCurrentJsonWriter();
 
                 jsonWriter.WritePropertyName("updatedApp");
-                WriteAppAsJson(jsonWriter, application);
+                WriteAppAsJson(jsonWriter, application, _dnsWebService._currentVersion);
             }
 
             public async Task InstallAppAsync(HttpContext context)
@@ -369,7 +399,7 @@ namespace DnsServerCore
                         Utf8JsonWriter jsonWriter = context.GetCurrentJsonWriter();
 
                         jsonWriter.WritePropertyName("installedApp");
-                        WriteAppAsJson(jsonWriter, application);
+                        WriteAppAsJson(jsonWriter, application, _dnsWebService._currentVersion);
                     }
                 }
                 finally
@@ -420,7 +450,7 @@ namespace DnsServerCore
                         Utf8JsonWriter jsonWriter = context.GetCurrentJsonWriter();
 
                         jsonWriter.WritePropertyName("updatedApp");
-                        WriteAppAsJson(jsonWriter, application);
+                        WriteAppAsJson(jsonWriter, application, _dnsWebService._currentVersion);
                     }
                 }
                 finally

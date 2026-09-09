@@ -53,6 +53,13 @@
 		     output. -->
 		<Compile Remove="Fixtures\ApiHandlerApps\**\*.cs" />
 		<None Remove="Fixtures\ApiHandlerApps\**\*.cs" />
+
+		<!-- Fixtures\ZeroRegistrationApp holds a standalone fixture project (its own
+		     .csproj, built via `dotnet publish` by ZeroRegistrationAppFixture) that must
+		     not be swept into this project's own compilation, along with its bin/obj
+		     output. -->
+		<Compile Remove="Fixtures\ZeroRegistrationApp\**\*.cs" />
+		<None Remove="Fixtures\ZeroRegistrationApp\**\*.cs" />
 	</ItemGroup>
 
 </Project>

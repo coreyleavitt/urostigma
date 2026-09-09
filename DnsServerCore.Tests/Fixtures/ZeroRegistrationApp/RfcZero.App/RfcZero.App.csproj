@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<!--
+	RFC-010 slice 5 fixture: an app assembly that registers zero
+	IDnsApplication implementors, since every type in the assembly is a
+	plain class unrelated to the app interfaces. Published via
+	ZeroRegistrationAppFixture (FixtureAppPublisher), not built as part of
+	the solution/DnsServerApp build. Exercises the "nothing implements the
+	interfaces" zero-registration branch of DnsApplicationManager's
+	LoadApplicationAsync.
+	-->
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<Nullable>enable</Nullable>
+		<AssemblyName>RfcZero.App</AssemblyName>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\..\..\DnsServerCore.ApplicationCommon\DnsServerCore.ApplicationCommon.csproj">
+			<Private>false</Private>
+		</ProjectReference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="TechnitiumLibrary.Net">
+			<HintPath>..\..\..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Net.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+	</ItemGroup>
+
+</Project>

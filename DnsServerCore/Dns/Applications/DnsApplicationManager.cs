@@ -113,6 +113,17 @@ namespace DnsServerCore.Dns.Applications
 
             await application.InitializeAsync();
 
+            if (application.DnsApplications.Count == 0)
+            {
+                //the sweep in DnsApplication's constructor found nothing to register (either
+                //every type failed to load, or none of them implement the app interfaces): do
+                //not let this sit in the loaded table doing nothing. Dispose the freshly built
+                //DnsApplication (unloading its collectible AssemblyLoadContext) before throwing --
+                //an in-constructor throw would skip Dispose and leak the ALC on every failed attempt
+                application.Dispose();
+                throw new DnsServerException("DNS application '" + application.Name + "' failed to load: the app assembly did not register any DNS application type.");
+            }
+
             if (!_applications.TryAdd(application.Name, application))
             {
                 application.Dispose();
@@ -466,16 +477,32 @@ namespace DnsServerCore.Dns.Applications
                 removedApp.ConfigUpdated -= Application_ConfigUpdated;
                 removedApp.Dispose();
 
-                if (Directory.Exists(removedApp.DnsServer.ApplicationFolder))
+                DeleteApplicationFolderIfExists(removedApp.DnsServer.ApplicationFolder);
+            }
+            else
+            {
+                //recovery: a never-loaded app (failed at startup load, or left behind by an update
+                //that replaced its files but then failed to load) has no entry to remove above, so
+                //it silently no-oped here before this fix. Delete its folder directly -- the only
+                //other recovery, installing over it, wipes dnsApp.config, which for a real
+                //deployment is the app's persisted policy
+                string applicationFolder = Path.GetFullPath(Path.Combine(_appsPath, applicationName));
+                if (applicationFolder.StartsWith(_appsPath + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                    DeleteApplicationFolderIfExists(applicationFolder);
+            }
+        }
+
+        private void DeleteApplicationFolderIfExists(string applicationFolder)
+        {
+            if (Directory.Exists(applicationFolder))
+            {
+                try
                 {
-                    try
-                    {
-                        Directory.Delete(removedApp.DnsServer.ApplicationFolder, true);
-                    }
-                    catch (Exception ex)
-                    {
-                        _dnsServer.LogManager.Write(ex);
-                    }
+                    Directory.Delete(applicationFolder, true);
+                }
+                catch (Exception ex)
+                {
+                    _dnsServer.LogManager.Write(ex);
                 }
             }
         }

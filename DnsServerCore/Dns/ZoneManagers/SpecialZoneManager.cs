@@ -174,6 +174,24 @@ namespace DnsServerCore.Dns.ZoneManagers
                 "onion"
             ];
 
+        //fork addition: the forward-only subset of the above two mechanisms' names,
+        //named here because both mechanisms answer subtrees under these names and
+        //the set is fixed at compile time (see docs/rfcs/010-fork-sovereignty.md)
+        static readonly IReadOnlyCollection<string> _forwardSpecialUseNames =
+            [
+                //locally-served side (forward names only; reverse zones excluded)
+                "localhost",
+                "home.arpa",
+                "resolver.arpa",
+                "service.arpa",
+
+                //non-existent side
+                "test",
+                "invalid",
+                "local",
+                "onion"
+            ];
+
         #endregion
 
         #region constructor
@@ -204,6 +222,20 @@ namespace DnsServerCore.Dns.ZoneManagers
         #endregion
 
         #region public
+
+        internal static bool IsForwardSpecialUseName(string qname)
+        {
+            foreach (string name in _forwardSpecialUseNames)
+            {
+                if (qname.Equals(name, StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                if (qname.EndsWith("." + name, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
 
         public DnsDatagram Query(DnsDatagram request)
         {

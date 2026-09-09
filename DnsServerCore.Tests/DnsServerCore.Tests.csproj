@@ -46,6 +46,13 @@
 		     this project's own compilation, along with their bin/obj output. -->
 		<Compile Remove="Fixtures\PoisonedApp\**\*.cs" />
 		<None Remove="Fixtures\PoisonedApp\**\*.cs" />
+
+		<!-- Fixtures\ApiHandlerApps holds standalone fixture projects (their own .csproj,
+		     built via `dotnet publish` by SingleApiHandlerAppFixture / AmbiguousApiHandlerAppFixture)
+		     that must not be swept into this project's own compilation, along with their bin/obj
+		     output. -->
+		<Compile Remove="Fixtures\ApiHandlerApps\**\*.cs" />
+		<None Remove="Fixtures\ApiHandlerApps\**\*.cs" />
 	</ItemGroup>
 
 </Project>

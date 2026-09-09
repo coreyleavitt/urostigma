@@ -53,6 +53,8 @@ namespace DnsServerCore.Dns.Applications
         readonly IReadOnlyDictionary<string, IDnsQueryLogger> _dnsQueryLoggers;
         readonly IReadOnlyDictionary<string, IDnsQueryLogs> _dnsQueryLogs;
         readonly IReadOnlyDictionary<string, IDnsPostProcessor> _dnsPostProcessors;
+        readonly IDnsApplicationApiHandler _dnsApplicationApiHandler;
+        readonly bool _dnsApplicationApiHandlerAmbiguous;
 
         #endregion
 
@@ -74,6 +76,7 @@ namespace DnsServerCore.Dns.Applications
             Dictionary<string, IDnsQueryLogger> dnsQueryLoggers = new Dictionary<string, IDnsQueryLogger>(1);
             Dictionary<string, IDnsQueryLogs> dnsQueryLogs = new Dictionary<string, IDnsQueryLogs>(1);
             Dictionary<string, IDnsPostProcessor> dnsPostProcessors = new Dictionary<string, IDnsPostProcessor>(1);
+            List<IDnsApplicationApiHandler> dnsApplicationApiHandlers = new List<IDnsApplicationApiHandler>(1);
 
             foreach (Assembly appAssembly in _appContext.AppAssemblies)
             {
@@ -150,6 +153,9 @@ namespace DnsServerCore.Dns.Applications
                             if (app is IDnsPostProcessor postProcessor)
                                 dnsPostProcessors.Add(classType.FullName, postProcessor);
 
+                            if (app is IDnsApplicationApiHandler apiHandler)
+                                dnsApplicationApiHandlers.Add(apiHandler);
+
                             if (_description is null)
                             {
                                 AssemblyDescriptionAttribute attribute = appAssembly.GetCustomAttribute<AssemblyDescriptionAttribute>();
@@ -184,6 +190,19 @@ namespace DnsServerCore.Dns.Applications
             _dnsQueryLoggers = dnsQueryLoggers;
             _dnsQueryLogs = dnsQueryLogs;
             _dnsPostProcessors = dnsPostProcessors;
+
+            //an app is one API namespace: registering more than one IDnsApplicationApiHandler
+            //implementation is a load-time misconfiguration, not something dispatch can resolve
+            //per request, so it is logged once here and answered as HTTP 500 at dispatch time
+            if (dnsApplicationApiHandlers.Count == 1)
+            {
+                _dnsApplicationApiHandler = dnsApplicationApiHandlers[0];
+            }
+            else if (dnsApplicationApiHandlers.Count > 1)
+            {
+                _dnsApplicationApiHandlerAmbiguous = true;
+                _dnsServer.WriteLog(new InvalidOperationException("DNS application '" + _name + "' registers " + dnsApplicationApiHandlers.Count + " IDnsApplicationApiHandler implementations; an app must register at most one. The '/api/apps/call' route will answer HTTP 500 for this app until this is fixed."));
+            }
         }
 
         #endregion
@@ -314,6 +333,22 @@ namespace DnsServerCore.Dns.Applications
 
         public IReadOnlyDictionary<string, IDnsPostProcessor> DnsPostProcessors
         { get { return _dnsPostProcessors; } }
+
+        /// <summary>
+        /// This app's single <see cref="IDnsApplicationApiHandler"/> implementor, or <c>null</c> if
+        /// the app does not implement the interface, or if it registers more than one implementor
+        /// (see <see cref="DnsApplicationApiHandlerAmbiguous"/>).
+        /// </summary>
+        public IDnsApplicationApiHandler DnsApplicationApiHandler
+        { get { return _dnsApplicationApiHandler; } }
+
+        /// <summary>
+        /// <c>true</c> if this app registers more than one <see cref="IDnsApplicationApiHandler"/>
+        /// implementor. Logged as a warning at load time; the '/api/apps/call' dispatch route
+        /// answers HTTP 500 for this app while this remains true.
+        /// </summary>
+        public bool DnsApplicationApiHandlerAmbiguous
+        { get { return _dnsApplicationApiHandlerAmbiguous; } }
 
         #endregion
     }

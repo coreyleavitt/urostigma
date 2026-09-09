@@ -17,10 +17,7 @@ like" for the production load path under test.
 */
 
 using System;
-using System.Diagnostics;
 using System.IO;
-using System.Runtime.CompilerServices;
-using System.Text;
 
 namespace DnsServerCore.Tests.Fixtures
 {
@@ -39,9 +36,9 @@ namespace DnsServerCore.Tests.Fixtures
             _tempRoot = Path.Combine(Path.GetTempPath(), "urostigma-poisoned-app-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_tempRoot);
 
-            string projectPath = Path.Combine(GetFixturesDirectory(), "PoisonedApp", "RfcRepro.App", "RfcRepro.App.csproj");
+            string projectPath = Path.Combine(FixtureAppPublisher.GetFixturesDirectory(), "PoisonedApp", "RfcRepro.App", "RfcRepro.App.csproj");
 
-            Publish(projectPath, _tempRoot);
+            FixtureAppPublisher.Publish(projectPath, _tempRoot);
 
             //stage dnsApp.config alongside the published output so the folder matches
             //what DnsApplication expects to find (GetConfigAsync reads this file)
@@ -50,65 +47,8 @@ namespace DnsServerCore.Tests.Fixtures
             //poison the folder: delete the one dependency BravoApp's base type needs.
             //The .deps.json still lists it, exactly like an app zip that shipped without
             //a referenced helper assembly.
-            DeleteIfExists(Path.Combine(_tempRoot, "RfcRepro.Helper.dll"));
-            DeleteIfExists(Path.Combine(_tempRoot, "RfcRepro.Helper.pdb"));
-        }
-
-        #endregion
-
-        #region private
-
-        static string GetFixturesDirectory([CallerFilePath] string thisFilePath = "")
-        {
-            //this file lives directly in Fixtures\, so its own directory *is* Fixtures\
-            return Path.GetDirectoryName(thisFilePath)!;
-        }
-
-        static void Publish(string projectPath, string outputDirectory)
-        {
-            ProcessStartInfo startInfo = new ProcessStartInfo("dotnet")
-            {
-                ArgumentList =
-                {
-                    "publish",
-                    projectPath,
-                    "-c", "Release",
-                    "-o", outputDirectory,
-                    "--nologo",
-                    "-v", "quiet"
-                },
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
-            };
-
-            using (Process process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start 'dotnet publish'."))
-            {
-                string stdout = process.StandardOutput.ReadToEnd();
-                string stderr = process.StandardError.ReadToEnd();
-
-                if (!process.WaitForExit(180000))
-                {
-                    process.Kill(true);
-                    throw new TimeoutException("'dotnet publish' for the poisoned-app fixture timed out.\n" + stdout + stderr);
-                }
-
-                if (process.ExitCode != 0)
-                {
-                    StringBuilder message = new StringBuilder();
-                    message.AppendLine($"'dotnet publish {projectPath}' failed with exit code {process.ExitCode}.");
-                    message.AppendLine(stdout);
-                    message.AppendLine(stderr);
-
-                    throw new InvalidOperationException(message.ToString());
-                }
-            }
-        }
-
-        static void DeleteIfExists(string path)
-        {
-            if (File.Exists(path))
-                File.Delete(path);
+            FixtureAppPublisher.DeleteIfExists(Path.Combine(_tempRoot, "RfcRepro.Helper.dll"));
+            FixtureAppPublisher.DeleteIfExists(Path.Combine(_tempRoot, "RfcRepro.Helper.pdb"));
         }
 
         #endregion

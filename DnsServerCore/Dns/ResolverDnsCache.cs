@@ -188,7 +188,7 @@ namespace DnsServerCore.Dns
 
         public virtual async Task<DnsDatagram> QueryAsync(DnsDatagram request, bool serveStale, bool findClosestNameServers = false, bool resetExpiry = false)
         {
-            DnsDatagram authResponse = await _dnsServer.AuthoritativeQueryAsync(request, DnsTransportProtocol.Tcp, true, _skipDnsAppAuthoritativeRequestHandlers);
+            DnsDatagram authResponse = await _dnsServer.AuthoritativeQueryAsync(request, DnsTransportProtocol.Tcp, true, _skipDnsAppAuthoritativeRequestHandlers, false); //deferEligible: false -- remoteEP is null here (the resolver cache's own lookups), not the client query path
             if (authResponse is not null)
             {
                 if ((authResponse.RCODE != DnsResponseCode.NoError) || (authResponse.Answer.Count > 0) || (authResponse.Authority.Count == 0) || authResponse.IsFirstAuthoritySOA())

@@ -2802,7 +2802,7 @@ namespace DnsServerCore.Dns
                     return errorResponse;
                 }
 
-                DnsDatagram unsignedResponse = await ProcessQueryAsync(unsignedRequest, remoteEP, protocol, isRecursionAllowed, false, _clientTimeout, request.TsigKeyName);
+                DnsDatagram unsignedResponse = await ProcessQueryAsync(unsignedRequest, remoteEP, protocol, isRecursionAllowed, false, _clientTimeout, request.TsigKeyName, true); //deferEligible: true -- ProcessRequestAsync is reached only from the UDP/TCP/QUIC/DoH listener entry points, i.e. the top-level client query path
                 if (unsignedResponse is null)
                     return null;
 
@@ -2819,7 +2819,7 @@ namespace DnsServerCore.Dns
                     return new DnsDatagram(request.Identifier, true, request.OPCODE, false, false, request.RecursionDesired, isRecursionAllowed, false, request.CheckingDisabled, DnsResponseCode.BADVERS, request.Question, null, null, null, _udpPayloadSize, _dnssecValidation && request.DnssecOk ? EDnsHeaderFlags.DNSSEC_OK : EDnsHeaderFlags.None) { Tag = DnsServerResponseType.Authoritative };
             }
 
-            DnsDatagram response = await ProcessQueryAsync(request, remoteEP, protocol, isRecursionAllowed, false, _clientTimeout, null);
+            DnsDatagram response = await ProcessQueryAsync(request, remoteEP, protocol, isRecursionAllowed, false, _clientTimeout, null, true); //deferEligible: true -- top-level client query path, see the signed-request call above
             if (response is null)
                 return null;
 
@@ -2875,7 +2875,7 @@ namespace DnsServerCore.Dns
             return response.Clone(null, null, newAdditional);
         }
 
-        private async Task<DnsDatagram> ProcessQueryAsync(DnsDatagram request, IPEndPoint remoteEP, DnsTransportProtocol protocol, bool isRecursionAllowed, bool skipDnsAppAuthoritativeRequestHandlers, int clientTimeout, string tsigAuthenticatedKeyName)
+        private async Task<DnsDatagram> ProcessQueryAsync(DnsDatagram request, IPEndPoint remoteEP, DnsTransportProtocol protocol, bool isRecursionAllowed, bool skipDnsAppAuthoritativeRequestHandlers, int clientTimeout, string tsigAuthenticatedKeyName, bool deferEligible)
         {
             if (request.IsResponse)
                 return null; //drop response datagram to avoid loops in rare scenarios
@@ -2912,7 +2912,7 @@ namespace DnsServerCore.Dns
                         }
 
                         //query authoritative zone
-                        DnsDatagram response = await ProcessAuthoritativeQueryAsync(request, remoteEP, protocol, isRecursionAllowed, skipDnsAppAuthoritativeRequestHandlers);
+                        DnsDatagram response = await ProcessAuthoritativeQueryAsync(request, remoteEP, protocol, isRecursionAllowed, skipDnsAppAuthoritativeRequestHandlers, deferEligible);
                         if (response is not null)
                         {
                             if ((question.Type == DnsResourceRecordType.ANY) && (protocol == DnsTransportProtocol.Udp)) //force TCP for ANY request
@@ -3816,11 +3816,14 @@ namespace DnsServerCore.Dns
             return xfrResponse;
         }
 
-        private async Task<DnsDatagram> ProcessAuthoritativeQueryAsync(DnsDatagram request, IPEndPoint remoteEP, DnsTransportProtocol protocol, bool isRecursionAllowed, bool skipDnsAppAuthoritativeRequestHandlers)
+        private async Task<DnsDatagram> ProcessAuthoritativeQueryAsync(DnsDatagram request, IPEndPoint remoteEP, DnsTransportProtocol protocol, bool isRecursionAllowed, bool skipDnsAppAuthoritativeRequestHandlers, bool deferEligible)
         {
-            DnsDatagram response = await AuthoritativeQueryAsync(request, protocol, isRecursionAllowed, skipDnsAppAuthoritativeRequestHandlers, remoteEP);
+            DnsDatagram response = await AuthoritativeQueryAsync(request, protocol, isRecursionAllowed, skipDnsAppAuthoritativeRequestHandlers, deferEligible, remoteEP);
             if (response is null)
                 return null;
+
+            if (response.Tag is DnsServerResponseType.Blocked)
+                return response; //deferred special-use block (RFC-010 quirk 2c) is terminal: bypasses CNAME/ANAME chase and forced recursion below, same as the recursive path returns its own blocked responses verbatim
 
             bool reprocessResponse; //to allow resolving CNAME/ANAME in response
             do
@@ -3881,7 +3884,7 @@ namespace DnsServerCore.Dns
             return response;
         }
 
-        internal async Task<DnsDatagram> AuthoritativeQueryAsync(DnsDatagram request, DnsTransportProtocol protocol, bool isRecursionAllowed, bool skipDnsAppAuthoritativeRequestHandlers, IPEndPoint remoteEP = null)
+        internal async Task<DnsDatagram> AuthoritativeQueryAsync(DnsDatagram request, DnsTransportProtocol protocol, bool isRecursionAllowed, bool skipDnsAppAuthoritativeRequestHandlers, bool deferEligible, IPEndPoint remoteEP = null)
         {
             DnsDatagram authResponse;
 
@@ -3897,8 +3900,7 @@ namespace DnsServerCore.Dns
                 {
                     if (authResponse is null)
                     {
-                        splResponse.Tag = DnsServerResponseType.Authoritative;
-                        return splResponse;
+                        return await ResolveSpecialUseDeferralAsync(request, remoteEP, protocol, deferEligible, splResponse);
                     }
                     else if (request.Question.Count > 0)
                     {
@@ -3906,8 +3908,7 @@ namespace DnsServerCore.Dns
                         if ((apexZone is null) || apexZone.Disabled || (apexZone.Name.Length == 0))
                         {
                             //zone does not exist or is disabled or is a root zone
-                            splResponse.Tag = DnsServerResponseType.Authoritative;
-                            return splResponse;
+                            return await ResolveSpecialUseDeferralAsync(request, remoteEP, protocol, deferEligible, splResponse);
                         }
                     }
                 }
@@ -3984,6 +3985,31 @@ namespace DnsServerCore.Dns
             {
                 return lastAppResponse;
             }
+        }
+
+        //RFC-010 quirk 2c: thin adapter around SpecialUseDeferralDecision -- the decision itself
+        //(the tri-state collapse) lives in that DnsServer-free unit; this method only supplies the
+        //real I/O collaborators (IsAllowedAsync/ProcessBlockedQueryAsync) as closures and applies the
+        //Authoritative tag when (and only when) the decision resolves to the synthetic answer, so a
+        //blocked response keeps the Blocked tag ProcessBlockedQueryAsync already set
+        private async Task<DnsDatagram> ResolveSpecialUseDeferralAsync(DnsDatagram request, IPEndPoint remoteEP, DnsTransportProtocol protocol, bool deferEligible, DnsDatagram syntheticResponse)
+        {
+            string qname = request.Question.Count > 0 ? request.Question[0].Name : null;
+            bool isForwardSpecialUseName = (qname is not null) && SpecialZoneManager.IsForwardSpecialUseName(qname);
+
+            DnsDatagram response = await SpecialUseDeferralDecision.DecideAsync(
+                SpecialUseNamesDeferToBlocking,
+                deferEligible,
+                _locallyServedDnsZones,
+                isForwardSpecialUseName,
+                syntheticResponse,
+                () => IsAllowedAsync(request, remoteEP, protocol),
+                () => ProcessBlockedQueryAsync(request, remoteEP, protocol));
+
+            if (ReferenceEquals(response, syntheticResponse))
+                response.Tag = DnsServerResponseType.Authoritative;
+
+            return response;
         }
 
         private async Task<DnsDatagram> ProcessAPPAsync(DnsDatagram request, DnsDatagram response, IPEndPoint remoteEP, DnsTransportProtocol protocol, bool isRecursionAllowed, bool skipDnsAppAuthoritativeRequestHandlers, int clientTimeout)
@@ -4128,7 +4154,7 @@ namespace DnsServerCore.Dns
                 DnsDatagram newRequest = new DnsDatagram(0, false, DnsOpcode.StandardQuery, false, false, request.RecursionDesired, false, false, request.CheckingDisabled, DnsResponseCode.NoError, new DnsQuestionRecord[] { new DnsQuestionRecord(cnameDomain, request.Question[0].Type, request.Question[0].Class) }, null, null, null, _udpPayloadSize, _dnssecValidation && request.DnssecOk ? EDnsHeaderFlags.DNSSEC_OK : EDnsHeaderFlags.None, eDnsClientSubnetOption);
 
                 //query authoritative zone first
-                newResponse = await AuthoritativeQueryAsync(newRequest, protocol, isRecursionAllowed, skipDnsAppAuthoritativeRequestHandlers, remoteEP);
+                newResponse = await AuthoritativeQueryAsync(newRequest, protocol, isRecursionAllowed, skipDnsAppAuthoritativeRequestHandlers, false, remoteEP); //deferEligible: false -- internal CNAME-chase re-query for a synthesized qname, not the client's original question
                 if (newResponse is null)
                 {
                     //not found in auth zone
@@ -4356,7 +4382,7 @@ namespace DnsServerCore.Dns
                     DnsDatagram newRequest = new DnsDatagram(0, false, DnsOpcode.StandardQuery, false, false, request.RecursionDesired, false, false, request.CheckingDisabled, DnsResponseCode.NoError, new DnsQuestionRecord[] { new DnsQuestionRecord(lastDomain, request.Question[0].Type, request.Question[0].Class) }, null, null, null, _udpPayloadSize, _dnssecValidation && request.DnssecOk ? EDnsHeaderFlags.DNSSEC_OK : EDnsHeaderFlags.None, eDnsClientSubnetOption);
 
                     //query authoritative zone first
-                    DnsDatagram newResponse = await AuthoritativeQueryAsync(newRequest, protocol, isRecursionAllowed, skipDnsAppAuthoritativeRequestHandlers, remoteEP);
+                    DnsDatagram newResponse = await AuthoritativeQueryAsync(newRequest, protocol, isRecursionAllowed, skipDnsAppAuthoritativeRequestHandlers, false, remoteEP); //deferEligible: false -- internal ANAME-chase re-query for a synthesized qname, not the client's original question
                     if (newResponse is null)
                     {
                         //not found in auth zone; do recursion
@@ -5949,7 +5975,7 @@ namespace DnsServerCore.Dns
             do
             {
                 DnsDatagram authRequest = new DnsDatagram(0, false, DnsOpcode.StandardQuery, false, false, false, false, false, false, DnsResponseCode.NoError, [question]);
-                DnsDatagram authResponse = await AuthoritativeQueryAsync(authRequest, DnsTransportProtocol.Tcp, true, false, IPENDPOINT_ANY_0);
+                DnsDatagram authResponse = await AuthoritativeQueryAsync(authRequest, DnsTransportProtocol.Tcp, true, false, false, IPENDPOINT_ANY_0); //deferEligible: false -- cache-refresh internal probe, exempt from blocking entirely, not the client query path
                 if (authResponse is not null)
                 {
                     //zone is hosted
@@ -7192,7 +7218,7 @@ namespace DnsServerCore.Dns
         {
             return TechnitiumLibrary.TaskExtensions.TimeoutAsync(delegate (CancellationToken cancellationToken1)
             {
-                return ProcessQueryAsync(request, remoteEP, DnsTransportProtocol.Tcp, true, skipDnsAppAuthoritativeRequestHandlers, timeout, null);
+                return ProcessQueryAsync(request, remoteEP, DnsTransportProtocol.Tcp, true, skipDnsAppAuthoritativeRequestHandlers, timeout, null, false); //deferEligible: false -- DirectQueryAsync is the internal-probe caller class (cache refresh, DirectQueryAsync callers), never the top-level client query path
             }, timeout, cancellationToken);
         }
 

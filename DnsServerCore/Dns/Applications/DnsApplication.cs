@@ -26,6 +26,17 @@ using System.Threading.Tasks;
 
 namespace DnsServerCore.Dns.Applications
 {
+    /// <summary>
+    /// One entry in <see cref="DnsApplication.LoadWarnings"/>: a type in the app's assembly that
+    /// did not register during the constructor sweep. <see cref="TypeName"/> is only recoverable on
+    /// the constructor-throw branch, where <c>classType.FullName</c> is still in scope; on the
+    /// assembly-load-failure branch (<see cref="ReflectionTypeLoadException"/>)
+    /// <see cref="Message"/> carries the loader exception's own summary instead -- the failed
+    /// type's identity is gone by the time that exception is raised, since it names the missing
+    /// dependency assembly, not the type that referenced it.
+    /// </summary>
+    public sealed record AppLoadWarning(string Message, string TypeName = null);
+
     public sealed class DnsApplication : IDisposable
     {
         #region events
@@ -55,6 +66,7 @@ namespace DnsServerCore.Dns.Applications
         readonly IReadOnlyDictionary<string, IDnsPostProcessor> _dnsPostProcessors;
         readonly IDnsApplicationApiHandler _dnsApplicationApiHandler;
         readonly bool _dnsApplicationApiHandlerAmbiguous;
+        readonly IReadOnlyList<AppLoadWarning> _loadWarnings;
 
         #endregion
 
@@ -77,6 +89,7 @@ namespace DnsServerCore.Dns.Applications
             Dictionary<string, IDnsQueryLogs> dnsQueryLogs = new Dictionary<string, IDnsQueryLogs>(1);
             Dictionary<string, IDnsPostProcessor> dnsPostProcessors = new Dictionary<string, IDnsPostProcessor>(1);
             List<IDnsApplicationApiHandler> dnsApplicationApiHandlers = new List<IDnsApplicationApiHandler>(1);
+            List<AppLoadWarning> loadWarnings = new List<AppLoadWarning>();
 
             foreach (Assembly appAssembly in _appContext.AppAssemblies)
             {
@@ -96,12 +109,21 @@ namespace DnsServerCore.Dns.Applications
                     foreach (Exception loaderException in ex.LoaderExceptions)
                     {
                         if (loaderException is not null)
+                        {
                             _dnsServer.WriteLog(loaderException);
+
+                            //content honesty: the type that failed to load is not recoverable here --
+                            //ex.Types holds null at its position, and this exception names the missing
+                            //dependency, not the type that referenced it -- so the warning carries only
+                            //the loader exception's own summary
+                            loadWarnings.Add(new AppLoadWarning(loaderException.Message));
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
                     _dnsServer.WriteLog(ex);
+                    loadWarnings.Add(new AppLoadWarning(ex.Message));
                     continue;
                 }
 
@@ -169,10 +191,16 @@ namespace DnsServerCore.Dns.Applications
                         catch (Exception ex)
                         {
                             _dnsServer.WriteLog(ex);
+
+                            //the constructor-throw branch: classType.FullName is still in scope, so
+                            //this warning can carry the type name unlike the assembly-load-failure branch above
+                            loadWarnings.Add(new AppLoadWarning(ex.Message, classType.FullName));
                         }
                     }
                 }
             }
+
+            _loadWarnings = loadWarnings;
 
             if (_version is null)
             {
@@ -349,6 +377,14 @@ namespace DnsServerCore.Dns.Applications
         /// </summary>
         public bool DnsApplicationApiHandlerAmbiguous
         { get { return _dnsApplicationApiHandlerAmbiguous; } }
+
+        /// <summary>
+        /// One entry per type in this app's assembly that failed to register during the
+        /// constructor sweep -- built once, never mutated after construction. Empty for a
+        /// healthy app.
+        /// </summary>
+        public IReadOnlyList<AppLoadWarning> LoadWarnings
+        { get { return _loadWarnings; } }
 
         #endregion
     }

@@ -1,13 +1,13 @@
 # RFC-010 Fork sovereignty — handoff
 
-- **Stage:** 2 architect complete — RFC **Accepted**, ready for stage 3
+- **Stage:** 3 tdd — slice grind in progress (started 2026-09-09)
 - **Rounds:** 3 complete (1–2 on 2026-08-13; 3 on 2026-09-09, Fable team)
 - **Resume:** `/loop implement the next unimplemented RFC slice with /tdd, following the standing rules; after each slice report one progress line (e.g. "slice 4/13 done, 9 remaining"); stop when every slice is implemented`
   (run from ficus/urostigma; RFC is docs/rfcs/010-fork-sovereignty.md)
 
 ## Slices (13 after round-3 re-slicing)
-- [ ] 1 Buildable ground + liveness proof (publish + boot + answer one query)
-- [ ] 2 Poisoned-app fixture (publish-shaped, production load path); fold 0001; delete stale branch
+- [x] 1 Buildable ground + liveness proof — commits 2c130890 + 4c473245; liveness: published artifact booted in stock aspnet:10.0 container, dig answered NOERROR on example.com; 3 tests green (AuthZoneManager.GetParentZone via InternalsVisibleTo)
+- [ ] 2 Poisoned-app fixture (publish-shaped, production load path); fold 0001; delete stale branch (in progress: delegated agent)
 - [ ] 3 Fold 0002 + 0003's DnsApplication.cs discovery hunk; discovery + ambiguity tests
 - [ ] 4 DnsAppApiDispatcher (single entry, internal two-phase, bodyReader delegate); fold rest of 0003
 - [ ] 5 Quirk 1: dispose-then-throw in LoadApplicationAsync; uninstall-unloaded recovery; AppLoadWarning; WriteAppAsJson internal static
@@ -19,6 +19,12 @@
 - [ ] 11 Sync policy doc + UPSTREAM-HISTORY; delete FUNDING.yml
 - [ ] 12 Cutover 1 — repoint: six Dockerfiles + workflow/script --secret threading + pin ARG; CI green
 - [ ] 13 Cutover 2 — baked-clone COPY successor; fixture two-tier rewrite; delete patched-server + patches/; operator redeploy
+
+## Grind environment notes (2026-09-09)
+- dotnet SDK 10 user-installed at `~/.dotnet` (not on default PATH — export `PATH="$HOME/.dotnet:$PATH"`); set `TMPDIR` under /home for big downloads (/tmp is a nearly-full tmpfs).
+- TechnitiumLibrary cloned+built at `~/projects/dotnet/ficus/TechnitiumLibrary` (pin dns-server-v15.4.0); per-project OutputPath lands all five DLLs in `bin/`.
+- Root `.gitignore` had `[Bb]uild/` swallowing `build/` — un-ignored via `!/build/` at EOF; watch for the same on other root dirs.
+- aspnet:10.0 image runs as root → container port 53 binds without extra caps (slice-10 precedent).
 
 ## Owner scope decision (2026-08-13, mid-round-1)
 No external consumers exist and none are wanted as a constraint

@@ -245,3 +245,8 @@ ModelManifest.xml
 .fake/
 
 Other/
+
+# Fork: the root build/ directory holds checked-in provisioning scripts,
+# not build output; un-ignore it from the generic [Bb]uild/ rule above.
+!/build/
+!/build/**

@@ -32,7 +32,7 @@ namespace DnsServerCore
 {
     public partial class DnsWebService
     {
-        sealed class WebServiceAppsApi 
+        internal sealed class WebServiceAppsApi
         {
             #region variables
 
@@ -503,6 +503,141 @@ namespace DnsServerCore
                 //trigger cluster update
                 if (_dnsWebService._clusterManager.ClusterInitialized)
                     _dnsWebService._clusterManager.TriggerNotifyAllSecondaryNodesIfPrimarySelfNode();
+            }
+
+            /// <summary>
+            /// Dispatches <c>/api/apps/call?name=&lt;app&gt;&amp;path=&lt;subpath&gt;</c> to the named
+            /// app's <see cref="IDnsApplicationApiHandler"/> via <see cref="DnsAppApiDispatcher"/>. This
+            /// route is on the web service's raw-passthrough list (see
+            /// <see cref="DnsWebService.WebServiceApiMiddleware"/>), so from this point on the
+            /// dispatch outcome owns the HTTP response verbatim -- this method writes
+            /// <see cref="HttpResponse.StatusCode"/>, <see cref="HttpResponse.ContentType"/> and the
+            /// response body directly for every outcome and must not let the standard JSON envelope,
+            /// or an escaped exception (which the console's exception middleware unconditionally
+            /// rewrites to HTTP 200 + JSON), apply.
+            /// </summary>
+            public async Task CallAppApiAsync(HttpContext context)
+            {
+                //session/token auth: same gate every other /api/* route already went through in
+                //WebServiceApiMiddleware; GetSessionUser throws if there is no valid session
+                User sessionUser = _dnsWebService.GetSessionUser(context);
+
+                HttpRequest request = context.Request;
+
+                string name = request.GetQueryOrForm("name").Trim();
+                string path = request.GetQueryOrForm("path", "").TrimStart('/');
+
+                //parse the query string once; apps never re-parse HTTP syntax
+                Dictionary<string, string> query = new Dictionary<string, string>(request.Query.Count);
+                foreach (KeyValuePair<string, Microsoft.Extensions.Primitives.StringValues> entry in request.Query)
+                    query[entry.Key] = entry.Value.ToString();
+
+                //ContentType is the one request header apps get verbatim (see DnsAppApiRequest);
+                //HttpRequest.ContentType is null when the caller sent no Content-Type header, which
+                //the DTO represents as empty rather than null
+                string contentType = request.ContentType ?? string.Empty;
+
+                DnsAppApiDispatcher.RequestMetadata requestMetadata = new DnsAppApiDispatcher.RequestMetadata(name, request.Method, path, query, contentType, sessionUser.Username);
+
+                DnsAppApiDispatcher.Outcome outcome = await DnsAppApiDispatcher.DispatchAsync(
+                    _dnsWebService._dnsServer.DnsApplicationManager.Applications,
+                    requestMetadata,
+                    requiredAccess => _dnsWebService._authManager.IsPermitted(PermissionSection.Apps, sessionUser, requiredAccess == DnsAppApiAccess.Modify ? PermissionFlag.Modify : PermissionFlag.View),
+                    cancellationToken => ReadBoundedBodyAsync(request, MaxAppApiRequestBodyBytes, cancellationToken),
+                    context.RequestAborted);
+
+                switch (outcome.Kind)
+                {
+                    case DnsAppApiDispatcher.OutcomeKind.NotFound:
+                        await WriteRawErrorAsync(context, StatusCodes.Status404NotFound, "DNS application was not found, or does not implement an API handler: " + name);
+                        return;
+
+                    case DnsAppApiDispatcher.OutcomeKind.Ambiguous:
+                        //load-time misconfiguration (more than one IDnsApplicationApiHandler
+                        //implementor); already logged as a warning when the app loaded
+                        await WriteRawErrorAsync(context, StatusCodes.Status500InternalServerError, "DNS application '" + name + "' registers more than one API handler.");
+                        return;
+
+                    case DnsAppApiDispatcher.OutcomeKind.AccessDenied:
+                        await WriteRawErrorAsync(context, StatusCodes.Status403Forbidden, "Access was denied.");
+                        return;
+
+                    case DnsAppApiDispatcher.OutcomeKind.HandlerThrew:
+                        _dnsWebService._log.Write(_dnsWebService.GetRemoteEndPoint(context), outcome.Exception);
+                        await WriteRawErrorAsync(context, StatusCodes.Status500InternalServerError, "DNS application '" + name + "' API handler threw an unhandled exception.");
+                        return;
+
+                    case DnsAppApiDispatcher.OutcomeKind.Success:
+                        {
+                            DnsAppApiResponse apiResponse = outcome.Response;
+                            HttpResponse response = context.Response;
+
+                            response.StatusCode = apiResponse.StatusCode;
+                            response.ContentType = apiResponse.ContentType ?? "application/octet-stream";
+
+                            byte[] responseBody = apiResponse.Body ?? Array.Empty<byte>();
+
+                            response.ContentLength = responseBody.Length;
+
+                            await response.Body.WriteAsync(responseBody, 0, responseBody.Length, context.RequestAborted);
+                        }
+                        return;
+                }
+            }
+
+            /// <summary>Maximum size, in bytes, of a request body <see cref="CallAppApiAsync"/> will buffer for an app.</summary>
+            private const int MaxAppApiRequestBodyBytes = 4 * 1024 * 1024; //4 MiB
+
+            /// <summary>
+            /// Reads <paramref name="request"/>'s body into a bounded buffer. The cap is enforced
+            /// while the stream is read -- not just checked against the <c>Content-Length</c> header
+            /// -- so a chunked request sent with no <c>Content-Length</c> cannot bypass it.
+            /// </summary>
+            private static async Task<byte[]> ReadBoundedBodyAsync(HttpRequest request, int maxBytes, CancellationToken cancellationToken)
+            {
+                long? contentLength = request.ContentLength;
+                if (contentLength.HasValue && contentLength.Value > maxBytes)
+                    throw new DnsWebServiceException("Request body exceeds the maximum allowed size of " + maxBytes + " bytes.");
+
+                using (MemoryStream buffer = new MemoryStream(contentLength.HasValue ? (int)Math.Min(contentLength.Value, maxBytes) : 4096))
+                {
+                    byte[] chunk = new byte[81920];
+                    int totalRead = 0;
+
+                    while (true)
+                    {
+                        int bytesRead = await request.Body.ReadAsync(chunk, 0, chunk.Length, cancellationToken);
+                        if (bytesRead == 0)
+                            break;
+
+                        totalRead += bytesRead;
+                        if (totalRead > maxBytes)
+                            throw new DnsWebServiceException("Request body exceeds the maximum allowed size of " + maxBytes + " bytes.");
+
+                        buffer.Write(chunk, 0, bytesRead);
+                    }
+
+                    return buffer.ToArray();
+                }
+            }
+
+            /// <summary>
+            /// Writes a raw (non-enveloped) plain-text error response directly to
+            /// <paramref name="context"/>'s response. Used for every <see cref="DnsAppApiDispatcher.Outcome"/>
+            /// failure kind -- see <see cref="CallAppApiAsync"/> -- none of which may go through the
+            /// console's 200-rewriting exception middleware.
+            /// </summary>
+            private static async Task WriteRawErrorAsync(HttpContext context, int statusCode, string message)
+            {
+                byte[] body = System.Text.Encoding.UTF8.GetBytes(message);
+
+                HttpResponse response = context.Response;
+
+                response.StatusCode = statusCode;
+                response.ContentType = "text/plain; charset=utf-8";
+                response.ContentLength = body.Length;
+
+                await response.Body.WriteAsync(body, 0, body.Length);
             }
 
             #endregion

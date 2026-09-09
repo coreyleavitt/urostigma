@@ -2185,6 +2185,7 @@ namespace DnsServerCore
             _webService.MapGetAndPost("/api/apps/uninstall", _appsApi.UninstallApp);
             _webService.MapGetAndPost("/api/apps/config/get", _appsApi.GetAppConfigAsync);
             _webService.MapGetAndPost("/api/apps/config/set", _appsApi.SetAppConfigAsync);
+            _webService.MapGetAndPost("/api/apps/call", _appsApi.CallAppApiAsync);
 
             //dns client
             _webService.MapGetAndPost("/api/dnsClient/resolve", _api.ResolveQueryAsync);
@@ -2415,6 +2416,7 @@ namespace DnsServerCore
                 case "/api/logs/download":
                 case "/api/logs/export":
                 case "/api/admin/cluster/primary/transferConfig":
+                case "/api/apps/call": //DnsAppApiDispatcher owns its own response verbatim -- see WebServiceAppsApi.CallAppApiAsync
                     {
                         if (!TryValidateSession(context, out UserSession _))
                             throw new InvalidTokenWebServiceException("Invalid token or session expired.");

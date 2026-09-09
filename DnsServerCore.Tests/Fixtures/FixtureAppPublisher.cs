@@ -17,6 +17,20 @@ namespace DnsServerCore.Tests.Fixtures
 {
     internal static class FixtureAppPublisher
     {
+        #region variables
+
+        //RFC-010 slice 4: a second test class (DnsAppApiDispatcherTests) started sharing fixture
+        //projects that a first class already owned (SingleApiHandlerAppFixture,
+        //AmbiguousApiHandlerAppFixture, PoisonedAppFixture) once IClassFixture instances for both
+        //classes exist concurrently, two `dotnet publish` child processes race on the same fixture
+        //project's shared obj\ intermediate directory and corrupt each other's ref-assembly copy.
+        //Each fixture stages its own _tempRoot output directory, so serializing only the publish
+        //step -- not the tests themselves -- is sufficient and keeps the fix in the one place that
+        //owns the child process.
+        static readonly object _publishLock = new object();
+
+        #endregion
+
         #region public
 
         /// <summary>
@@ -36,41 +50,47 @@ namespace DnsServerCore.Tests.Fixtures
         /// </summary>
         public static void Publish(string projectPath, string outputDirectory)
         {
-            ProcessStartInfo startInfo = new ProcessStartInfo("dotnet")
+            //serialize the child process, not the caller: two IClassFixture instances for the same
+            //fixture project (one per consuming test class) must not run `dotnet publish` against
+            //that project's shared obj\ directory at the same time
+            lock (_publishLock)
             {
-                ArgumentList =
+                ProcessStartInfo startInfo = new ProcessStartInfo("dotnet")
                 {
-                    "publish",
-                    projectPath,
-                    "-c", "Release",
-                    "-o", outputDirectory,
-                    "--nologo",
-                    "-v", "quiet"
-                },
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
-            };
+                    ArgumentList =
+                    {
+                        "publish",
+                        projectPath,
+                        "-c", "Release",
+                        "-o", outputDirectory,
+                        "--nologo",
+                        "-v", "quiet"
+                    },
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false
+                };
 
-            using (Process process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start 'dotnet publish'."))
-            {
-                string stdout = process.StandardOutput.ReadToEnd();
-                string stderr = process.StandardError.ReadToEnd();
-
-                if (!process.WaitForExit(180000))
+                using (Process process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start 'dotnet publish'."))
                 {
-                    process.Kill(true);
-                    throw new TimeoutException("'dotnet publish' for a fixture app timed out.\n" + stdout + stderr);
-                }
+                    string stdout = process.StandardOutput.ReadToEnd();
+                    string stderr = process.StandardError.ReadToEnd();
 
-                if (process.ExitCode != 0)
-                {
-                    StringBuilder message = new StringBuilder();
-                    message.AppendLine($"'dotnet publish {projectPath}' failed with exit code {process.ExitCode}.");
-                    message.AppendLine(stdout);
-                    message.AppendLine(stderr);
+                    if (!process.WaitForExit(180000))
+                    {
+                        process.Kill(true);
+                        throw new TimeoutException("'dotnet publish' for a fixture app timed out.\n" + stdout + stderr);
+                    }
 
-                    throw new InvalidOperationException(message.ToString());
+                    if (process.ExitCode != 0)
+                    {
+                        StringBuilder message = new StringBuilder();
+                        message.AppendLine($"'dotnet publish {projectPath}' failed with exit code {process.ExitCode}.");
+                        message.AppendLine(stdout);
+                        message.AppendLine(stderr);
+
+                        throw new InvalidOperationException(message.ToString());
+                    }
                 }
             }
         }

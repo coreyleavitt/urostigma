@@ -18,7 +18,7 @@ only in the RFC and, on conflict, the RFC wins.
 | RFC | Repo | Title | Status | Depends on |
 |---|---|---|---|---|
 | 001–009 | content-filter | See [that repo's index](https://github.com/coreyleavitt/technitium-content-filter/blob/main/docs/rfcs/README.md) | mixed | — |
-| [010](010-fork-sovereignty.md) | urostigma | Fork sovereignty: patches become commits, builds trust this repo | Accepted | — |
+| [010](010-fork-sovereignty.md) | urostigma | Fork sovereignty: patches become commits, builds trust this repo | Implemented | — |
 | [011](011-subsystem-map-and-swap-order.md) | urostigma | Subsystem map, characterization targets, swap order, recursion boundary | Stub | 010 |
 | [012](https://github.com/coreyleavitt/syconium/blob/main/docs/rfcs/012-wire-characterization-harness.md) | syconium | Wire-level characterization harness | Stub | none to build; 010 for baseline capture |
 | [013](https://github.com/coreyleavitt/syconium/blob/main/docs/rfcs/013-engine-adoption.md) | syconium | Engine adoption: ContentFilter.Core, solution shape, CI, version contract | Stub | none to adopt; 010 for the version contract |

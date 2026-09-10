@@ -1,6 +1,7 @@
 # RFC-010 Fork sovereignty — handoff
 
-- **Stage:** 3 tdd — slice grind in progress (started 2026-09-09)
+- **Stage:** 3 tdd COMPLETE (all 13 slices, 2026-09-09/10) — next is stage 4: `/code-review` RFC-010 scope
+- **Awaiting Corey:** (1) push technitium-content-filter main (commits 64a8152 + 53e30a4 sit atop 243 pre-existing unpushed commits — your call to publish; Actions-green for slices 12–13 follows that push); (2) operator redeploy — rebuild and `compose up` so the live deployment runs the fork's build (RFC's named closing step)
 - **Rounds:** 3 complete (1–2 on 2026-08-13; 3 on 2026-09-09, Fable team)
 - **Resume:** `/loop implement the next unimplemented RFC slice with /tdd, following the standing rules; after each slice report one progress line (e.g. "slice 4/13 done, 9 remaining"); stop when every slice is implemented`
   (run from ficus/urostigma; RFC is docs/rfcs/010-fork-sovereignty.md)
@@ -18,7 +19,7 @@
 - [x] 10 CI image publish — commit 42ade5cb (Dockerfile.sovereign classic-builder-verified, .dockerignore, ci.yml publish job needs:build-test + non-cancelling publish-develop group, release.yml self-gated tag workflow); Actions run 34382213518 GREEN; scratch pull ghcr.io/coreyleavitt/urostigma:develop (fresh docker login via gh token, read:packages) → booted, dig NOERROR + HTTP 200; compose repointed to the GHCR image after the run-proof. NOTE: GHCR package is private (inherits repo visibility — correct until RFC-020); content-filter's future pulls need the slice-12 PAT.
 - [x] 11 Sync policy + history — commit 3f339290 + outcome addendum; docs/UPSTREAM-SYNC.md (policy incl. 7-file conflict-ownership list), docs/UPSTREAM-HISTORY.md (verbatim UPSTREAM.md copy + primary-source outcome record: PR #2092 closed unmerged 2026-08-11, "This is not a bug" comment verified via GitHub API), FUNDING.yml deleted, CLAUDE.md qualifier dropped
 - [x] 12 Cutover 1 (simplified: public repo, no secrets) — content-filter commit 64a8152; build/urostigma.version pin (15.4.0-sovereign.1) feeding UROSTIGMA_VERSION ARG with file-backed default; six Dockerfiles repointed + git-apply loops deleted; ALL SIX built fully local (test image ran 386 tests green); no workflow/script edits needed. NOT PUSHED — content-filter main is 243 commits ahead of origin from unrelated work; Actions-green awaits Corey's push call.
-- [ ] 13 Cutover 2 — baked-clone COPY successor; fixture two-tier rewrite; delete patched-server + patches/; operator redeploy (in progress: delegated agent)
+- [x] 13 Cutover 2 — content-filter commit 53e30a4; baked urostigma clones in integration/perf images; BaseTechnitiumFixture two-tier rewrite (baked tree → credential-free public clone fallback; builds Dockerfile.sovereign); patched-server + patches/ deleted (history preservation verified first); build-dns-server.sh/compose-example/provisioning doc updated; integration image rebuilt and CI-style run 27/27 green through the rewritten fixture. Operator redeploy = named human closing step, pending.
 
 ## Grind environment notes (2026-09-09)
 - dotnet SDK 10 user-installed at `~/.dotnet` (not on default PATH — export `PATH="$HOME/.dotnet:$PATH"`); set `TMPDIR` under /home for big downloads (/tmp is a nearly-full tmpfs).

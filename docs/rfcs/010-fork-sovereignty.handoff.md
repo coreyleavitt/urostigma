@@ -34,15 +34,16 @@ RFC; rounds 2–3 honored this. Roadmap runs as parallel engine/host
 tracks (MIGRATION.md "Tracks").
 
 ## Open forks (awaiting Corey)
-- **Slice-12 manual prerequisite (blocking the grind):** create a GitHub
-  **classic PAT** with `repo` (read) + `read:packages`, then store it as a
-  secret in technitium-content-filter (suggested name `UROSTIGMA_CLONE_TOKEN`):
-  `gh secret set UROSTIGMA_CLONE_TOKEN -R coreyleavitt/technitium-content-filter`
-  Classic (not fine-grained) per RFC — GHCR support for fine-grained PATs has
-  documented gaps. Slices 12–13 (content-filter cutover) cannot start without
-  it. Also required by slice 12: choosing `<n>` and pushing the first
-  `15.4.0-sovereign.<n>` git tag (human-cut per RFC) — or delegate the tag
-  push back to the grind once the PAT exists.
+- none. The slice-12 PAT prerequisite was dissolved by owner decision
+  (2026-09-09): "I dont care enough its apache 2.0 anyways just make it
+  public" — repo made public ahead of RFC-020 (visibility gate lifted;
+  RFC-020 still owns de-branding/binary-conveyance posture; note the
+  repo is GPLv3 — syconium is the Apache one — but public GPL source
+  is compliant). RFC amended (Build auth owner-decision paragraph;
+  slices 12–13 simplified to plain clones, no secrets). GHCR package
+  stays private (UI-only toggle; nothing in the cutover pulls it).
+  First sovereign tag 15.4.0-sovereign.1 cut by the grind under the
+  same decision.
 
 ## Key decisions (round 3, 2026-09-09)
 - **True upstream base stated:** develop = v15.4.0 + 15 unreleased

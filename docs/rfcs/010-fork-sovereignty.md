@@ -514,6 +514,20 @@ builds themselves the PAT is threaded through BuildKit secret mounts
 with `docker build --secret id=gh_token,...`), never a build
 `ARG`/`ENV` — a token in a clone URL persists in image layer history.
 
+**Owner decision (2026-09-09, mid-slice-12):** the repo was made public
+ahead of RFC-020, lifting the visibility half of that gate by owner
+call (GPLv3 source distribution with the license intact is compliant;
+RFC-020 still owns de-branding and any binary-conveyance posture). This
+moots the entire private-clone auth apparatus above for slices 12–13:
+no PAT, no BuildKit secret mounts, no `--secret` threading — the
+content-filter Dockerfiles clone the public repo at the pinned
+sovereign tag with a plain `git clone`, fed by the checked-in `ARG`
+file as designed. The GHCR package remains private (visibility is a
+UI-only toggle, and nothing in the cutover pulls the image — the
+builds clone source; the operator pulls with an authenticated login).
+The paragraph above is retained as the record of the design that a
+private repo would have required.
+
 ### Upstream sync policy (issue #4)
 
 A written policy at `docs/UPSTREAM-SYNC.md`:
@@ -719,18 +733,21 @@ producer boundary (slice 10's image run), not discovered at the end.
     `docs/UPSTREAM-HISTORY.md` preserving the PR #2092 record; delete
     the inherited `.github/FUNDING.yml` (upstream's sponsorship pointer)
     in passing.
-12. **Cutover part 1 — repoint, in content-filter.** PAT created and
-    stored (named prerequisite); six Dockerfiles clone the sovereign
-    git tag via secret mounts; `--secret` threading added at every
-    invoking surface (`ci.yaml` ×3, `perf-comparison.yaml`,
-    `release.yaml` ×2, `build.sh`, `build-dns-server.sh`); the pin ARG
-    file checked in. `Dockerfile.patched-server`, the fixture, and
-    `patches/` untouched. Content-filter CI green.
+12. **Cutover part 1 — repoint, in content-filter.** (Simplified by the
+    2026-09-09 owner decision above: the repo is public, so the PAT
+    prerequisite and all secret-mount/`--secret` threading fall away.)
+    Six Dockerfiles change their clone source to a plain `git clone` of
+    `coreyleavitt/urostigma` at the sovereign git tag, fed by the
+    checked-in pin ARG file, and drop the `git apply` loop.
+    `Dockerfile.patched-server`, the fixture, and `patches/` untouched.
+    Content-filter CI green.
 13. **Cutover part 2 — fixture and deletion.** The two whole-tree
     `COPY`s become build-time urostigma clones baked into the
-    integration/perf images; `BaseTechnitiumFixture` rewritten
-    (two-tier: baked tree preferred, host clone fallback; builds
-    `Dockerfile.sovereign`); `Dockerfile.patched-server` deleted;
+    integration/perf images (plain clones — public repo);
+    `BaseTechnitiumFixture` rewritten (two-tier: baked tree preferred,
+    host clone fallback — the fallback now needs no ambient
+    credentials; builds `Dockerfile.sovereign`);
+    `Dockerfile.patched-server` deleted;
     `docker-compose.example.yaml` and the provisioning doc updated;
     **then** delete `patches/dns-server/` (history preserved per
     Design); full content-filter CI green. Closing step: the operator
